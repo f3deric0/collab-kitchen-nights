@@ -67,13 +67,13 @@ const DishwasherShowcase = () => {
             Finale con personalità
           </p>
           <h2 className="mb-5 font-display text-4xl font-extrabold leading-none text-foreground sm:text-6xl">
-            L’unica vera admin qui è la lavastoviglie.
+            Sì, è proprio una <span className="text-secondary">lavastoviglie</span>.
           </h2>
           <p className="mb-6 font-body text-lg leading-relaxed text-muted-foreground">
-            Passaci sopra col mouse o scorri la pagina: si muove lei, ma giudica comunque chi lascia i piatti "in ammollo" per tre giorni.
+            La mascotte finale del sito: sportello frontale, cestello pieno di piatti e braccio che gira. Passaci sopra col mouse o scorri la pagina per farla muovere.
           </p>
           <div className="inline-flex rounded-full border border-border bg-card px-4 py-2 font-body text-sm text-foreground shadow-[0_14px_40px_hsl(var(--foreground)/0.08)]">
-            Battuta inclusa, detersivo no.
+            Qui i piatti non spariscono da soli. Purtroppo.
           </div>
         </div>
 
@@ -94,15 +94,20 @@ const DishwasherShowcase = () => {
               style={{ transform: "translateZ(0px)", transformStyle: "preserve-3d" }}
               className="dishwasher-shell absolute inset-0 rounded-[2.25rem] border border-border bg-card p-4 shadow-[0_28px_80px_hsl(var(--foreground)/0.18)]"
             >
+              <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card px-3 py-1 font-body text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Dishwasher 3D
+              </div>
               <div className="absolute inset-x-5 top-4 flex items-center justify-between rounded-full border border-border bg-muted/70 px-4 py-2 backdrop-blur-sm">
                 <div className="flex gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-secondary/80" />
                   <span className="h-2.5 w-2.5 rounded-full bg-accent/80" />
                 </div>
                 <div className="font-body text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                  eco rinse
+                  wash cycle
                 </div>
               </div>
+
+              <div className="absolute left-1/2 top-[4.8rem] h-2 w-28 -translate-x-1/2 rounded-full bg-foreground/10" />
 
               <div
                 style={{ transform: "translateZ(26px)" }}
@@ -123,12 +128,12 @@ const DishwasherShowcase = () => {
                   <div className="mb-4 flex items-center justify-between">
                     <div>
                       <p className="font-body text-xs uppercase tracking-[0.22em] text-muted-foreground">
-                        carico attuale
+                        dentro la lavastoviglie
                       </p>
-                      <p className="font-display text-2xl font-bold text-foreground">Piatti in revisione</p>
+                      <p className="font-display text-2xl font-bold text-foreground">Cestello pieno di piatti</p>
                     </div>
                     <div className="rounded-full bg-accent px-3 py-1 font-body text-xs font-semibold text-accent-foreground">
-                      98% pulito
+                      ciclo attivo
                     </div>
                   </div>
 
