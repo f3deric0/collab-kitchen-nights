@@ -1,102 +1,68 @@
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Clock, ChefHat } from "lucide-react";
-
-const recipes = [
-  {
-    title: "Pasta alla Carbonara",
-    description: "Il classico romano: guanciale croccante, uova, pecorino e pepe. Semplicità perfetta.",
-    time: "25 min",
-    difficulty: "Facile",
-  },
-  {
-    title: "Thai Green Curry",
-    description: "Latte di cocco, pasta di curry verde, verdure di stagione e riso basmati.",
-    time: "35 min",
-    difficulty: "Media",
-  },
-  {
-    title: "Tacos al Pastor",
-    description: "Tortillas calde, carne marinata, cipolla, coriandolo e lime. Festa messicana.",
-    time: "40 min",
-    difficulty: "Media",
-  },
-  {
-    title: "Risotto ai Funghi",
-    description: "Riso carnaroli mantecato con porcini, parmigiano e un filo d'olio al tartufo.",
-    time: "30 min",
-    difficulty: "Media",
-  },
-  {
-    title: "Hummus & Pita Board",
-    description: "Hummus cremoso, pita calda, verdure crude e feta sbriciolata. Perfetto per condividere.",
-    time: "20 min",
-    difficulty: "Facile",
-  },
-  {
-    title: "Stir-Fry Noodles",
-    description: "Noodles saltati con verdure croccanti, salsa di soia, zenzero e sesamo tostato.",
-    time: "20 min",
-    difficulty: "Facile",
-  },
-];
-
-const difficultyColor: Record<string, string> = {
-  Facile: "bg-green-500/15 text-green-700",
-  Media: "bg-accent/15 text-accent",
-  Difficile: "bg-destructive/15 text-destructive",
-};
+import AdminEntryButton from "@/components/AdminEntryButton";
+import {
+  DEFAULT_RECIPES,
+  fetchPublicRecipes,
+  recipeDifficultyClasses,
+} from "@/lib/publicContent";
+import { Clock } from "lucide-react";
 
 const RecipesSection = () => {
+  const { data: recipes = DEFAULT_RECIPES } = useQuery({
+    queryKey: ["public-recipes"],
+    queryFn: fetchPublicRecipes,
+  });
+
   return (
-    <section id="recipes" className="py-24 sm:py-32 px-6 bg-background">
-      <div className="max-w-6xl mx-auto">
-        <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="font-display text-4xl sm:text-5xl font-bold text-foreground text-center mb-4"
-        >
-          Ricette & <span className="text-secondary">Idee</span>
-        </motion.h2>
+    <section id="recipes" className="bg-background px-6 py-24 sm:py-32">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-4 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-5">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center font-display text-4xl font-bold text-foreground sm:text-5xl"
+          >
+            Ricette & <span className="text-secondary">Idee</span>
+          </motion.h2>
+          <AdminEntryButton />
+        </div>
+
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="font-body text-muted-foreground text-center mb-14 max-w-xl mx-auto"
+          className="mx-auto mb-14 max-w-xl text-center font-body text-muted-foreground"
         >
-          Ispirazione rapida per la tua prossima Collab. Non servono istruzioni
-          dettagliate, basta la scintilla giusta.
+          Ispirazione rapida per la tua prossima Collab. Non servono istruzioni dettagliate, basta la scintilla giusta.
         </motion.p>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recipes.map((recipe, i) => (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {recipes.map((recipe, index) => (
             <motion.div
-              key={recipe.title}
+              key={recipe.id}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-30px" }}
-              transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="group rounded-xl border border-border bg-card p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+              transition={{ duration: 0.45, delay: index * 0.08 }}
+              className="group rounded-xl border border-border bg-card p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
             >
-              <div className="flex items-center gap-2 mb-4">
-                <span
-                  className={`font-body text-xs font-semibold px-3 py-1 rounded-full ${difficultyColor[recipe.difficulty]}`}
-                >
+              <div className="mb-4 flex items-center gap-2">
+                <span className={`rounded-full border px-3 py-1 font-body text-xs font-semibold ${recipeDifficultyClasses[recipe.difficulty] ?? recipeDifficultyClasses.Facile}`}>
                   {recipe.difficulty}
                 </span>
                 <span className="flex items-center gap-1 font-body text-xs text-muted-foreground">
-                  <Clock className="w-3.5 h-3.5" />
-                  {recipe.time}
+                  <Clock className="h-3.5 w-3.5" />
+                  {recipe.time_label}
                 </span>
               </div>
-              <h3 className="font-display text-lg font-bold text-foreground mb-2 group-hover:text-secondary transition-colors">
+              <h3 className="mb-2 font-display text-lg font-bold text-foreground transition-colors group-hover:text-secondary">
                 {recipe.title}
               </h3>
-              <p className="font-body text-sm text-muted-foreground leading-relaxed">
-                {recipe.description}
-              </p>
+              <p className="font-body text-sm leading-relaxed text-muted-foreground">{recipe.description}</p>
             </motion.div>
           ))}
         </div>

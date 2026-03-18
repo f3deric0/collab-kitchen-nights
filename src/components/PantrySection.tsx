@@ -1,60 +1,43 @@
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-
-type Ingredient = {
-  name: string;
-  tag: "Base" | "Spezie" | "Fresco" | "Condimento" | "Altro";
-};
-
-// This will be replaced by a database-driven list with admin panel
-const pantryItems: Ingredient[] = [
-  { name: "Pasta (spaghetti, penne)", tag: "Base" },
-  { name: "Riso basmati", tag: "Base" },
-  { name: "Olio extravergine d'oliva", tag: "Condimento" },
-  { name: "Sale e pepe", tag: "Spezie" },
-  { name: "Aglio", tag: "Fresco" },
-  { name: "Cipolla", tag: "Fresco" },
-  { name: "Peperoncino", tag: "Spezie" },
-  { name: "Curcuma", tag: "Spezie" },
-  { name: "Salsa di soia", tag: "Condimento" },
-  { name: "Latte di cocco", tag: "Base" },
-  { name: "Pomodori pelati", tag: "Base" },
-  { name: "Parmigiano Reggiano", tag: "Fresco" },
-  { name: "Limoni", tag: "Fresco" },
-  { name: "Aceto balsamico", tag: "Condimento" },
-  { name: "Farina 00", tag: "Base" },
-  { name: "Curry in polvere", tag: "Spezie" },
-];
-
-const tagColors: Record<string, string> = {
-  Base: "bg-primary/10 text-primary border-primary/20",
-  Spezie: "bg-secondary/15 text-secondary border-secondary/20",
-  Fresco: "bg-green-500/10 text-green-700 border-green-500/20",
-  Condimento: "bg-accent/10 text-accent border-accent/20",
-  Altro: "bg-muted text-muted-foreground border-border",
-};
+import AdminEntryButton from "@/components/AdminEntryButton";
+import {
+  DEFAULT_PANTRY,
+  fetchPublicPantry,
+  pantryCategoryClasses,
+  pantryCategoryLabels,
+} from "@/lib/publicContent";
 
 const PantrySection = () => {
+  const { data: pantryItems = DEFAULT_PANTRY } = useQuery({
+    queryKey: ["public-pantry"],
+    queryFn: fetchPublicPantry,
+  });
+
   return (
-    <section id="pantry" className="py-24 sm:py-32 px-6 bg-muted/50">
-      <div className="max-w-4xl mx-auto">
-        <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="font-display text-4xl sm:text-5xl font-bold text-foreground text-center mb-4"
-        >
-          La mia <span className="text-secondary">Dispensa</span>
-        </motion.h2>
+    <section id="pantry" className="bg-muted/50 px-6 py-24 sm:py-32">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-4 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-5">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center font-display text-4xl font-bold text-foreground sm:text-5xl"
+          >
+            La mia <span className="text-secondary">Dispensa</span>
+          </motion.h2>
+          <AdminEntryButton />
+        </div>
+
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="font-body text-muted-foreground text-center mb-14 max-w-xl mx-auto"
+          className="mx-auto mb-14 max-w-xl text-center font-body text-muted-foreground"
         >
-          Ingredienti sempre disponibili nella cucina. Puoi contare su questi
-          come base di partenza per la tua Collab.
+          Ingredienti sempre disponibili nella cucina. Puoi contare su questi come base di partenza per la tua Collab.
         </motion.p>
 
         <motion.div
@@ -62,20 +45,18 @@ const PantrySection = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="grid sm:grid-cols-2 gap-3"
+          className="grid gap-3 sm:grid-cols-2"
         >
           {pantryItems.map((item) => (
             <div
-              key={item.name}
-              className="flex items-center justify-between py-3 px-4 rounded-lg bg-card border border-border hover:shadow-sm transition-shadow"
+              key={item.id}
+              className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 transition-shadow hover:shadow-sm"
             >
-              <span className="font-body text-sm text-foreground">
-                {item.name}
-              </span>
+              <span className="font-body text-sm text-foreground">{item.name}</span>
               <span
-                className={`font-body text-xs font-medium px-3 py-1 rounded-full border ${tagColors[item.tag]}`}
+                className={`rounded-full border px-3 py-1 font-body text-xs font-medium ${pantryCategoryClasses[item.category]}`}
               >
-                {item.tag}
+                {pantryCategoryLabels[item.category]}
               </span>
             </div>
           ))}
