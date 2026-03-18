@@ -157,6 +157,42 @@ export type Database = {
         }
         Relationships: []
       }
+      recipes: {
+        Row: {
+          created_at: string
+          description: string
+          difficulty: string
+          display_order: number
+          id: string
+          is_active: boolean
+          time_label: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          difficulty?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          time_label?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          difficulty?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          time_label?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
