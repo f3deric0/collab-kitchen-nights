@@ -8,12 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-const slotTemplates = ["18:30", "19:15", "20:00", "20:45", "21:30"];
-const bookedSlotMap: Record<number, string[]> = {
-  1: ["19:15"],
-  2: ["20:45"],
-  4: ["18:30", "21:30"],
-};
+const dailySlot = "21:00";
 
 const BookingSection = () => {
   const [weekOffset, setWeekOffset] = useState(0);
@@ -37,28 +32,29 @@ const BookingSection = () => {
   );
 
   const slotsForDay = (day: Date) => {
-    const weekday = day.getDay();
-    const blocked = bookedSlotMap[weekday] ?? [];
-    return slotTemplates.map((slot) => ({
-      time: slot,
-      available: !blocked.includes(slot) && day >= startOfWeek(new Date(), { weekStartsOn: 1 }),
-    }));
+    const today = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return [
+      {
+        time: dailySlot,
+        available: day >= today,
+      },
+    ];
   };
 
-  const activeDay = selectedDay ?? weekDays.find((day) => slotsForDay(day).some((slot) => slot.available)) ?? weekDays[0];
+  const activeDay = selectedDay ?? weekDays[0];
   const availableSlots = slotsForDay(activeDay);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     if (!selectedDay || !selectedSlot || !name || !email || !participants) {
-      toast.error("Scegli uno slot e compila i campi obbligatori.");
+      toast.error("Scegli il giorno delle 21:00 e compila i campi obbligatori.");
       return;
     }
 
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 900));
-    toast.success("Slot richiesto! Ti ricontattiamo per la conferma finale.");
+    toast.success("Richiesta inviata per le 21:00! Ti ricontattiamo per la conferma finale.");
     setSelectedDay(null);
     setSelectedSlot(null);
     setName("");
@@ -82,10 +78,10 @@ const BookingSection = () => {
             Planner settimanale
           </p>
           <h2 className="font-display text-4xl font-extrabold text-primary-foreground sm:text-6xl">
-            Scegli sempre <span className="text-accent">solo gli slot disponibili</span>.
+            Un solo slot al giorno: <span className="text-accent">sempre alle 21:00</span>.
           </h2>
           <p className="mt-5 font-body text-base leading-relaxed text-primary-foreground/72 sm:text-lg">
-            Vista settimanale più chiara, scelta rapida dello slot e conferma immediata della disponibilità visiva.
+            Selezioni il giorno, scegli lo slot fisso delle 21:00 e invii la richiesta in pochi secondi.
           </p>
         </motion.div>
 
@@ -127,7 +123,6 @@ const BookingSection = () => {
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
               {weekDays.map((day) => {
-                const availableCount = slotsForDay(day).filter((slot) => slot.available).length;
                 const isActive = isSameDay(activeDay, day);
 
                 return (
@@ -136,7 +131,7 @@ const BookingSection = () => {
                     type="button"
                     onClick={() => {
                       setSelectedDay(day);
-                      setSelectedSlot(null);
+                      setSelectedSlot(dailySlot);
                     }}
                     className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${
                       isActive
@@ -149,7 +144,7 @@ const BookingSection = () => {
                     </p>
                     <p className="mt-2 font-display text-3xl font-bold">{format(day, "d", { locale: it })}</p>
                     <p className={`mt-3 font-body text-xs ${isActive ? "text-accent-foreground/85" : "text-primary-foreground/65"}`}>
-                      {availableCount > 0 ? `${availableCount} slot liberi` : "Completo"}
+                      Slot unico: 21:00
                     </p>
                   </button>
                 );
@@ -159,38 +154,33 @@ const BookingSection = () => {
             <div className="mt-6 rounded-[1.7rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-5">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Slot disponibili</p>
+                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Slot disponibile</p>
                   <h4 className="mt-1 font-display text-2xl font-bold text-primary-foreground">
                     {format(activeDay, "EEEE d MMMM", { locale: it })}
                   </h4>
                 </div>
                 <div className="rounded-full bg-primary-foreground/10 px-3 py-2 font-body text-xs font-semibold text-primary-foreground/80">
-                  Selezione veloce
+                  Solo un orario
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3">
                 {availableSlots.map((slot) => (
                   <button
                     key={slot.time}
                     type="button"
-                    onClick={() => slot.available && setSelectedSlot(slot.time)}
-                    disabled={!slot.available}
-                    className={`flex items-center justify-between rounded-[1.2rem] border px-4 py-3 font-body text-sm font-semibold transition ${
+                    onClick={() => setSelectedSlot(slot.time)}
+                    className={`flex items-center justify-between rounded-[1.2rem] border px-4 py-4 font-body text-sm font-semibold transition ${
                       selectedSlot === slot.time
                         ? "border-accent bg-accent text-accent-foreground"
-                        : slot.available
-                          ? "border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"
-                          : "border-primary-foreground/10 bg-primary-foreground/[0.04] text-primary-foreground/35"
+                        : "border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"
                     }`}
                   >
-                    <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex items-center gap-2 text-base">
                       <Clock3 className="h-4 w-4" />
                       {slot.time}
                     </span>
-                    <span className="text-[11px] uppercase tracking-[0.16em]">
-                      {slot.available ? "libero" : "occupato"}
-                    </span>
+                    <span className="text-[11px] uppercase tracking-[0.16em]">available</span>
                   </button>
                 ))}
               </div>
@@ -209,11 +199,11 @@ const BookingSection = () => {
               <div className="flex items-start gap-3">
                 <Sparkles className="mt-0.5 h-5 w-5 text-accent" />
                 <div>
-                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Slot selezionato</p>
+                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Selezione attiva</p>
                   <p className="mt-1 font-display text-2xl font-bold text-primary-foreground">
                     {selectedDay && selectedSlot
                       ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}`
-                      : "Seleziona giorno e orario"}
+                      : "Scegli il giorno delle 21:00"}
                   </p>
                 </div>
               </div>
@@ -241,9 +231,9 @@ const BookingSection = () => {
             <div className="mt-6 flex items-center justify-between rounded-[1.4rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] px-4 py-3">
               <span className="inline-flex items-center gap-2 font-body text-sm text-primary-foreground/72">
                 <Users className="h-4 w-4" />
-                Conferma rapida dello slot scelto
+                Prenotazione serale fissa
               </span>
-              <span className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Weekly view</span>
+              <span className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">21:00 daily</span>
             </div>
 
             <button
@@ -251,7 +241,7 @@ const BookingSection = () => {
               disabled={isSubmitting}
               className="mt-6 w-full rounded-full bg-accent py-3.5 font-body text-base font-semibold text-accent-foreground shadow-lg transition-transform duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
             >
-              {isSubmitting ? "Invio in corso..." : "Richiedi questo slot"}
+              {isSubmitting ? "Invio in corso..." : "Richiedi le 21:00"}
             </button>
           </motion.form>
         </div>
