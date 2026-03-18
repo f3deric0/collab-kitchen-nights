@@ -11,13 +11,23 @@ const DishwasherShowcase = () => {
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
-  const rotateX = useSpring(useTransform([rotateXBase, mouseY], ([base, mouse]) => base + mouse), {
+  const rotateXCombined = useTransform([rotateXBase, mouseY], (values) => {
+    const [base, mouse] = values as [number, number];
+    return base + mouse;
+  });
+
+  const rotateYCombined = useTransform([rotateYBase, mouseX], (values) => {
+    const [base, mouse] = values as [number, number];
+    return base + mouse;
+  });
+
+  const rotateX = useSpring(rotateXCombined, {
     stiffness: 130,
     damping: 18,
     mass: 0.6,
   });
 
-  const rotateY = useSpring(useTransform([rotateYBase, mouseX], ([base, mouse]) => base + mouse), {
+  const rotateY = useSpring(rotateYCombined, {
     stiffness: 130,
     damping: 18,
     mass: 0.6,
