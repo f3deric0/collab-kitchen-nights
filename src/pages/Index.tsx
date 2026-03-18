@@ -3,6 +3,7 @@ import WhatIsCollab from "@/components/WhatIsCollab";
 import BookingSection from "@/components/BookingSection";
 import RecipesSection from "@/components/RecipesSection";
 import PantrySection from "@/components/PantrySection";
+import DishwasherShowcase from "@/components/DishwasherShowcase";
 import FooterSection from "@/components/FooterSection";
 
 const Index = () => {
@@ -13,6 +14,7 @@ const Index = () => {
       <BookingSection />
       <RecipesSection />
       <PantrySection />
+      <DishwasherShowcase />
       <FooterSection />
     </main>
   );
