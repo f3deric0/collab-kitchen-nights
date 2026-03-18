@@ -6,8 +6,8 @@ const FooterSection = () => {
           Collab @ Milestone Lombos
         </h3>
         <p className="mx-auto mb-8 max-w-xl font-body text-sm text-primary-foreground/60">
-          Questo non è il sito ufficiale di Milestone. Se a fine serata senti la
-          lavastoviglie partire, vuol dire che la collab è stata un successo.
+          Questo non è il sito ufficiale di Milestone. Però se senti partire la
+          lavastoviglie, probabilmente la serata è andata bene.
         </p>
         <div className="border-t border-primary-foreground/10 pt-6">
           <p className="font-body text-xs text-primary-foreground/35">
