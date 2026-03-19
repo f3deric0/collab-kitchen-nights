@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import { motion } from "framer-motion";
@@ -7,14 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const dailySlot = "21:00";
 
 // ─── EmailJS config ───────────────────────────────────────────────────────────
-// Assicurati di avere queste variabili su Netlify:
-//   VITE_EMAILJS_SERVICE_ID   → il Service ID dal tuo account EmailJS
-//   VITE_EMAILJS_TEMPLATE_ID  → il Template ID (vedi sotto per la struttura)
-//   VITE_EMAILJS_PUBLIC_KEY   → la Public Key (Account → API Keys)
 const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  as string;
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string;
 const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  as string;
@@ -26,7 +23,6 @@ async function sendConfirmationEmail(params: {
   participants: string;
   notes: string;
 }) {
-  // EmailJS via fetch — nessuna dipendenza aggiuntiva
   const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -37,7 +33,6 @@ async function sendConfirmationEmail(params: {
       template_params: params,
     }),
   });
-
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`EmailJS error: ${text}`);
@@ -55,6 +50,36 @@ const BookingSection = () => {
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Giorni occupati e prenotazioni pending da Supabase
+  const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
+  const [pendingDates, setPendingDates] = useState<Set<string>>(new Set());
+  const [confirmedDates, setConfirmedDates] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const fetchAvailability = async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const c = supabase as any;
+      const [busyRes, bookRes] = await Promise.all([
+        c.from("busy_days").select("date"),
+        c.from("booking_requests")
+          .select("requested_date,status")
+          .gte("requested_date", today),
+      ]);
+      if (busyRes.data) setBusyDates(new Set(busyRes.data.map((d: any) => d.date)));
+      if (bookRes.data) {
+        const pending = new Set<string>();
+        const confirmed = new Set<string>();
+        for (const b of bookRes.data) {
+          if (b.status === "pending") pending.add(b.requested_date);
+          if (b.status === "confirmed") confirmed.add(b.requested_date);
+        }
+        setPendingDates(pending);
+        setConfirmedDates(confirmed);
+      }
+    };
+    void fetchAvailability();
+  }, []);
+
   const today = startOfDay(new Date());
 
   const weekStart = useMemo(() => {
@@ -67,11 +92,24 @@ const BookingSection = () => {
     [weekStart],
   );
 
-  const isDayAvailable = (day: Date) => startOfDay(day) >= today;
+  const getDayStatus = (day: Date) => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const isPast = startOfDay(day) < today;
+    if (isPast) return "past";
+    if (busyDates.has(dateStr)) return "busy";
+    if (confirmedDates.has(dateStr)) return "confirmed";
+    if (pendingDates.has(dateStr)) return "pending";
+    return "free";
+  };
+
+  const isDayAvailable = (day: Date) => {
+    const status = getDayStatus(day);
+    return status === "free" || status === "pending";
+  };
 
   const firstAvailableDay = useMemo(
     () => weekDays.find((day) => isDayAvailable(day)) ?? weekDays[0],
-    [weekDays],
+    [weekDays, busyDates, confirmedDates],
   );
 
   const slotsForDay = (day: Date) => [
@@ -89,12 +127,41 @@ const BookingSection = () => {
       return;
     }
 
+    const dateStr = format(selectedDay, "yyyy-MM-dd");
+    const status = getDayStatus(selectedDay);
+    if (status === "busy") {
+      toast.error("Questo giorno non è disponibile.");
+      return;
+    }
+    if (status === "confirmed") {
+      toast.error("Questo giorno è già confermato per un'altra collab.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const dateLabel = format(selectedDay, "EEEE d MMMM yyyy", { locale: it });
 
-      // ── Invia email di conferma all'utente ──────────────────────────────────
+      // ── Salva su Supabase con status "pending" ──────────────────────────────
+      const { error: dbError } = await (supabase as any)
+        .from("booking_requests")
+        .insert({
+          name,
+          email,
+          participants: parseInt(participants, 10),
+          requested_date: dateStr,
+          requested_time: selectedSlot,
+          notes: notes || null,
+          status: "pending",
+        });
+
+      if (dbError) throw dbError;
+
+      // Aggiorna stato locale
+      setPendingDates((prev) => new Set([...prev, dateStr]));
+
+      // ── Invia email di conferma ──────────────────────────────────────────────
       if (EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY) {
         await sendConfirmationEmail({
           to_name:      name,
@@ -103,14 +170,12 @@ const BookingSection = () => {
           participants: participants,
           notes:        notes || "–",
         });
-      } else {
-        console.warn(
-          "EmailJS non configurato: aggiungi VITE_EMAILJS_SERVICE_ID, " +
-          "VITE_EMAILJS_TEMPLATE_ID e VITE_EMAILJS_PUBLIC_KEY su Netlify."
-        );
       }
 
-      toast.success(`Richiesta inviata per le 21:00! Ti ricontattiamo per la conferma finale.`);
+      toast.success(
+        `Richiesta inviata! Sei in lista d'attesa per le 21:00 del ${format(selectedDay, "d MMM", { locale: it })}. Ti ricontatteremo presto.`,
+        { duration: 6000 }
+      );
 
       // Reset form
       setSelectedDay(null);
@@ -120,13 +185,33 @@ const BookingSection = () => {
       setParticipants("");
       setNotes("");
     } catch (err) {
-      console.error("Errore invio email:", err);
-      // Mostra successo ugualmente — la prenotazione è stata ricevuta
-      // anche se l'email ha avuto problemi
-      toast.success("Richiesta inviata! (Controlla la configurazione EmailJS se non ricevi la mail.)");
+      console.error("Errore:", err);
+      toast.error("Qualcosa è andato storto. Riprova tra poco.");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Badge colore per ogni stato giorno
+  const getDayClasses = (day: Date) => {
+    const status = getDayStatus(day);
+    const isActive = isSameDay(activeDay, day);
+
+    if (status === "past") return "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.02] text-primary-foreground/35 opacity-55";
+    if (status === "busy") return "cursor-not-allowed border-red-500/30 bg-red-500/10 text-primary-foreground/40 opacity-70";
+    if (status === "confirmed") return "cursor-not-allowed border-green-500/30 bg-green-500/10 text-primary-foreground/40 opacity-70";
+    if (isActive) return "border-accent bg-accent text-accent-foreground shadow-lg";
+    if (status === "pending") return "border-yellow-400/40 bg-yellow-400/10 text-primary-foreground hover:bg-yellow-400/20 cursor-pointer";
+    return "border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground hover:bg-primary-foreground/[0.08]";
+  };
+
+  const getDayLabel = (day: Date) => {
+    const status = getDayStatus(day);
+    if (status === "past") return "Giorno passato";
+    if (status === "busy") return "Non disponibile";
+    if (status === "confirmed") return "Già confermato";
+    if (status === "pending") return "In attesa · 21:00";
+    return "Slot unico: 21:00";
   };
 
   return (
@@ -148,6 +233,13 @@ const BookingSection = () => {
           <p className="mt-5 font-body text-base leading-relaxed text-primary-foreground/72 sm:text-lg">
             Scegli solo il giorno: l'orario è fisso, sempre alle 21:00, una richiesta per sera.
           </p>
+          {/* Legenda */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 font-body text-xs text-primary-foreground/60">
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-primary-foreground/20 bg-primary-foreground/5"/>&nbsp;Libero</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-yellow-400/40 bg-yellow-400/20"/>&nbsp;In attesa</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-green-500/30 bg-green-500/15"/>&nbsp;Confermato</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-red-500/30 bg-red-500/10"/>&nbsp;Non disponibile</span>
+          </div>
         </motion.div>
 
         <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr]">
@@ -190,30 +282,24 @@ const BookingSection = () => {
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
               {weekDays.map((day) => {
-                const isActive   = isSameDay(activeDay, day);
-                const isDisabled = !isDayAvailable(day);
+                const status = getDayStatus(day);
+                const isDisabled = status === "past" || status === "busy" || status === "confirmed";
                 return (
                   <button
                     key={day.toISOString()}
                     type="button"
                     disabled={isDisabled}
-                    onClick={() => { setSelectedDay(day); setSelectedSlot(dailySlot); }}
-                    className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${
-                      isDisabled
-                        ? "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.02] text-primary-foreground/35 opacity-55"
-                        : isActive
-                          ? "border-accent bg-accent text-accent-foreground shadow-lg"
-                          : "border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground hover:bg-primary-foreground/[0.08]"
-                    }`}
+                    onClick={() => { if (!isDisabled) { setSelectedDay(day); setSelectedSlot(dailySlot); } }}
+                    className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${getDayClasses(day)}`}
                   >
-                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isActive && !isDisabled ? "text-accent-foreground/80" : "text-inherit"}`}>
+                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isSameDay(activeDay, day) && !isDisabled ? "text-accent-foreground/80" : "text-inherit"}`}>
                       {format(day, "EEE", { locale: it })}
                     </p>
                     <p className="mt-2 font-display text-3xl font-bold">
                       {format(day, "d", { locale: it })}
                     </p>
                     <p className="mt-3 font-body text-xs">
-                      {isDisabled ? "Giorno passato" : "Slot unico: 21:00"}
+                      {getDayLabel(day)}
                     </p>
                   </button>
                 );
@@ -285,6 +371,11 @@ const BookingSection = () => {
                       ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}`
                       : "Scegli il giorno delle 21:00"}
                   </p>
+                  {selectedDay && getDayStatus(selectedDay) === "pending" && (
+                    <p className="mt-1 font-body text-xs text-yellow-400 font-semibold">
+                      ⏳ Ci sono già richieste in attesa per questo giorno
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -330,12 +421,13 @@ const BookingSection = () => {
               <div>
                 <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">
                   Idee per la cena
+                  <span className="ml-1 text-primary-foreground/45 text-xs normal-case tracking-normal">(scrivi "manca X" se ti serve un ingrediente!)</span>
                 </Label>
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={4}
-                  placeholder="Carbonara battle? Curry night? Dimmi il mood."
+                  placeholder='Es: "Carbonara battle? Curry night? manca la guanciale…"'
                   className="resize-none border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35"
                 />
               </div>
@@ -344,10 +436,10 @@ const BookingSection = () => {
             <div className="mt-6 flex items-center justify-between rounded-[1.4rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] px-4 py-3">
               <span className="inline-flex items-center gap-2 font-body text-sm text-primary-foreground/72">
                 <Users className="h-4 w-4" />
-                Prenotazione serale fissa
+                La tua richiesta va in lista d'attesa
               </span>
               <span className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">
-                21:00 only
+                pending
               </span>
             </div>
 
@@ -356,8 +448,11 @@ const BookingSection = () => {
               disabled={isSubmitting}
               className="mt-6 w-full rounded-full bg-accent py-3.5 font-body text-base font-semibold text-accent-foreground shadow-lg transition-transform duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
             >
-              {isSubmitting ? "Invio in corso..." : "Richiedi le 21:00"}
+              {isSubmitting ? "Invio in corso..." : "Richiedi le 21:00 🍳"}
             </button>
+            <p className="mt-3 text-center font-body text-xs text-primary-foreground/40">
+              La prenotazione è in attesa finché Chicco non la conferma.
+            </p>
           </motion.form>
         </div>
       </div>
