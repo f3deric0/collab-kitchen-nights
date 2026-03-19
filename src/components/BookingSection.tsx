@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock3, ChefHat, Users, ArrowRight, ArrowLeft, ShoppingBag } from "lucide-react";
+import { Clock3, ChefHat, Users, ArrowRight, ArrowLeft, ShoppingBag, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -42,7 +42,7 @@ const BookingSection = () => {
   const [participants, setParticipants] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Step 2
+  // Step 2 — il primo nome è sempre "Chicco" e non modificabile
   const [step, setStep] = useState<1 | 2>(1);
   const [participantNames, setParticipantNames] = useState<string[]>([]);
   const [missingItem, setMissingItem] = useState("");
@@ -113,14 +113,18 @@ const BookingSection = () => {
     return "21:00 · libero";
   };
 
+  // Numero partecipanti OLTRE a Chicco (che è sempre il primo)
   const numParticipants = parseInt(participants, 10) || 0;
+  // Gli slot liberi = partecipanti - 1 (Chicco è già nel conto)
+  const slotsForOthers = Math.max(0, numParticipants - 1);
+
   useEffect(() => {
     setParticipantNames(prev => {
       const arr = [...prev];
-      while (arr.length < numParticipants) arr.push("");
-      return arr.slice(0, numParticipants);
+      while (arr.length < slotsForOthers) arr.push("");
+      return arr.slice(0, slotsForOthers);
     });
-  }, [numParticipants]);
+  }, [slotsForOthers]);
 
   const handleGoStep2 = () => {
     if (!selectedDay || !selectedSlot || !name || !email || !participants) {
@@ -135,17 +139,21 @@ const BookingSection = () => {
     try {
       const dateStr = format(selectedDay!, "yyyy-MM-dd");
       const dateLabel = format(selectedDay!, "EEEE d MMMM yyyy", { locale: it });
+
+      // Tutti i nomi: Chicco + gli altri
+      const allNames = ["Chicco", ...participantNames].filter(Boolean);
       const notesParts = [
         notes || null,
-        participantNames.filter(Boolean).length > 0 ? `Partecipanti: ${participantNames.filter(Boolean).join(", ")}` : null,
+        allNames.length > 0 ? `Partecipanti: ${allNames.join(", ")}` : null,
         missingItem && publishMissing ? `manca ${missingItem}` : null,
         missingItem && !publishMissing ? `serve: ${missingItem}` : null,
       ].filter(Boolean);
       const fullNotes = notesParts.join(" — ") || null;
 
       const { error: dbError } = await (supabase as any).from("booking_requests").insert({
-        name, email,
-        participants: parseInt(participants, 10),
+        name,
+        email,
+        participants: numParticipants,
         requested_date: dateStr,
         requested_time: selectedSlot,
         notes: fullNotes,
@@ -156,7 +164,12 @@ const BookingSection = () => {
       setPendingDates(prev => new Set([...prev, dateStr]));
 
       if (EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY) {
-        await sendConfirmationEmail({ to_name: name, to_email: email, date: `${dateLabel} alle ${selectedSlot}`, participants, notes: fullNotes ?? "–" }).catch(console.warn);
+        await sendConfirmationEmail({
+          to_name: name, to_email: email,
+          date: `${dateLabel} alle ${selectedSlot}`,
+          participants: String(numParticipants),
+          notes: fullNotes ?? "–",
+        }).catch(console.warn);
       }
 
       toast.success(
@@ -166,12 +179,13 @@ const BookingSection = () => {
         { duration: 7000 }
       );
 
+      // Reset
       setSelectedDay(null); setSelectedSlot(dailySlot);
       setName(""); setEmail(""); setParticipants(""); setNotes("");
       setParticipantNames([]); setMissingItem(""); setPublishMissing(false); setStep(1);
-    } catch (err) {
-      console.error(err);
-      toast.error("Errore nell'invio. Controlla la connessione e riprova.");
+    } catch (err: any) {
+      console.error("Supabase error:", err);
+      toast.error(`Errore: ${err?.message ?? "Controlla la connessione e riprova."}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -218,6 +232,7 @@ const BookingSection = () => {
                   className="rounded-full border border-primary-foreground/15 px-4 py-2 font-body text-sm font-semibold text-primary-foreground transition hover:bg-primary-foreground/10">Succ.</button>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
               {weekDays.map(day => {
                 const status = getDayStatus(day);
@@ -235,6 +250,7 @@ const BookingSection = () => {
                 );
               })}
             </div>
+
             <div className="mt-6 rounded-[1.7rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-5">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
@@ -262,8 +278,11 @@ const BookingSection = () => {
             <div className="mb-5 flex items-center gap-2">
               {[1, 2].map(s => (
                 <div key={s} className="flex items-center gap-2">
-                  <div className={`flex h-6 w-6 items-center justify-center rounded-full font-body text-xs font-bold transition ${step === s ? "bg-accent text-accent-foreground" : step > s ? "bg-accent/30 text-accent" : "bg-primary-foreground/10 text-primary-foreground/40"}`}>{s}</div>
-                  <span className={`font-body text-xs font-semibold transition ${step === s ? "text-primary-foreground" : "text-primary-foreground/40"}`}>{s === 1 ? "Dati base" : "Dettagli gruppo"}</span>
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full font-body text-xs font-bold transition
+                    ${step === s ? "bg-accent text-accent-foreground" : step > s ? "bg-accent/30 text-accent" : "bg-primary-foreground/10 text-primary-foreground/40"}`}>{s}</div>
+                  <span className={`font-body text-xs font-semibold transition ${step === s ? "text-primary-foreground" : "text-primary-foreground/40"}`}>
+                    {s === 1 ? "Dati base" : "Dettagli gruppo"}
+                  </span>
                   {s < 2 && <div className="h-px w-5 bg-primary-foreground/15" />}
                 </div>
               ))}
@@ -276,7 +295,9 @@ const BookingSection = () => {
                 <div>
                   <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Collab con Chicco</p>
                   <p className="mt-1 font-display text-2xl font-bold text-primary-foreground">
-                    {selectedDay && selectedSlot ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}` : "Scegli il giorno ←"}
+                    {selectedDay && selectedSlot
+                      ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}`
+                      : "Scegli il giorno ←"}
                   </p>
                   {selectedDay && getDayStatus(selectedDay) === "pending" && (
                     <p className="mt-1 font-body text-xs font-semibold text-yellow-400">⏳ Ci sono già richieste in attesa per questo giorno</p>
@@ -286,10 +307,11 @@ const BookingSection = () => {
             </div>
 
             <AnimatePresence mode="wait">
+              {/* ── STEP 1 ── */}
               {step === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }} className="space-y-4">
                   <div>
-                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Nome *</Label>
+                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Il tuo nome *</Label>
                     <Input value={name} onChange={e => setName(e.target.value)} placeholder="Il tuo nome"
                       className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
                   </div>
@@ -299,8 +321,10 @@ const BookingSection = () => {
                       className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
                   </div>
                   <div>
-                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Partecipanti *</Label>
-                    <Input type="number" min={1} max={10} value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Quanti sarete?"
+                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">
+                      Partecipanti * <span className="text-xs normal-case tracking-normal text-primary-foreground/45">(incluso Chicco)</span>
+                    </Label>
+                    <Input type="number" min={1} max={10} value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Quanti sarete in totale?"
                       className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
                   </div>
                   <div>
@@ -316,24 +340,37 @@ const BookingSection = () => {
                 </motion.div>
               )}
 
+              {/* ── STEP 2 ── */}
               {step === 2 && (
                 <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }} className="space-y-5">
-                  {numParticipants > 0 && (
-                    <div>
-                      <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
-                        <Users className="mr-1.5 inline h-4 w-4" /> Chi viene? ({numParticipants} {numParticipants === 1 ? "persona" : "persone"})
-                      </Label>
-                      <div className="space-y-2">
-                        {participantNames.map((pName, idx) => (
-                          <Input key={idx} value={pName}
-                            onChange={e => setParticipantNames(arr => arr.map((v, i) => i === idx ? e.target.value : v))}
-                            placeholder={idx === 0 ? `${name || "Tu"} (organizzatore)` : `Persona ${idx + 1}`}
-                            className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30" />
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
+                  {/* Lista partecipanti */}
+                  <div>
+                    <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
+                      <Users className="mr-1.5 inline h-4 w-4" />
+                      Chi viene? ({numParticipants} {numParticipants === 1 ? "persona" : "persone"})
+                    </Label>
+                    <div className="space-y-2">
+                      {/* Chicco — sempre primo, non modificabile */}
+                      <div className="relative">
+                        <Input
+                          value="Chicco"
+                          readOnly
+                          className="border-accent/30 bg-accent/10 font-body text-sm font-semibold text-accent pr-10 cursor-default"
+                        />
+                        <Lock className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-accent/60" />
+                      </div>
+                      {/* Gli altri partecipanti */}
+                      {participantNames.map((pName, idx) => (
+                        <Input key={idx} value={pName}
+                          onChange={e => setParticipantNames(arr => arr.map((v, i) => i === idx ? e.target.value : v))}
+                          placeholder={`Persona ${idx + 2}`}
+                          className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30" />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Manca qualcosa */}
                   <div className="rounded-[1.5rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-4">
                     <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
                       <ShoppingBag className="mr-1.5 inline h-4 w-4 text-orange-400" /> Manca qualcosa o qualcuno?
