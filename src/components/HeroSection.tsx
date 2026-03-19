@@ -36,8 +36,8 @@ const HeroSection = () => {
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="mb-6 font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-primary-foreground sm:text-7xl lg:text-8xl"
         >
-          Collab @<br />
-          <span className="text-gradient">Milestone Lombos</span>
+          Collab con Chicco<br />
+          <span className="text-gradient">@ Milestone Lombos</span>
         </motion.h1>
 
         <motion.p
