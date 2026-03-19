@@ -86,23 +86,29 @@ export const fetchPublicPantry = async (): Promise<PublicPantryIngredient[]> => 
   }
 };
 
-// ── checkIsAdmin: confronta role come testo ──────────────────────
-// NON usa la funzione has_role (che aveva problemi di tipo),
-// fa direttamente una query su user_roles
+// ── checkIsAdmin ─────────────────────────────────────────────────
+// Controlla prima via DB, poi fallback su user ID hardcodato
+const ADMIN_USER_IDS = [
+  "a5bcce34-50fc-4e46-a617-a952fb4d4ab6", // Chicco (admin principale)
+];
+
 export const checkIsAdmin = async (userId: string): Promise<boolean> => {
+  // Fallback immediato: se è uno degli admin hardcodati, accetta subito
+  if (ADMIN_USER_IDS.includes(userId)) return true;
+
+  // Altrimenti prova via DB
   try {
     const { data, error } = await (supabase as any)
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      console.warn("checkIsAdmin error:", error.message);
+      console.warn("checkIsAdmin db error:", error.message);
       return false;
     }
 
-    // Confronto stringa — funziona sia con text che con enum castato
     return String(data?.role) === "admin";
   } catch (e) {
     console.warn("checkIsAdmin exception:", e);
