@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock3, Sparkles, Users, ArrowRight, ArrowLeft, ShoppingBag } from "lucide-react";
+import { Clock3, ChefHat, Users, ArrowRight, ArrowLeft, ShoppingBag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -184,12 +184,13 @@ const BookingSection = () => {
       <div className="mx-auto max-w-6xl">
         <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
           className="mx-auto mb-14 max-w-3xl text-center">
-          <p className="mb-4 font-body text-sm uppercase tracking-[0.3em] text-primary-foreground/55">Planner settimanale</p>
+          <p className="mb-4 font-body text-sm uppercase tracking-[0.3em] text-primary-foreground/55">Prenota una serata</p>
           <h2 className="font-display text-4xl font-extrabold text-primary-foreground sm:text-6xl">
-            Un solo slot disponibile al giorno: <span className="text-accent">21:00</span>.
+            Collab già pronta con Chicco —{" "}
+            <span className="text-accent">prenota qui</span>.
           </h2>
           <p className="mt-5 font-body text-base leading-relaxed text-primary-foreground/72 sm:text-lg">
-            Scegli il giorno — la tua prenotazione va in lista d'attesa finché Chicco la conferma.
+            Scegli il giorno, compila il form e sei dentro. La tua richiesta va in lista d'attesa finché Chicco la conferma.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-4 font-body text-xs text-primary-foreground/60">
             <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-primary-foreground/20 bg-primary-foreground/5" /> Libero</span>
@@ -237,7 +238,7 @@ const BookingSection = () => {
             <div className="mt-6 rounded-[1.7rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-5">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Orario disponibile</p>
+                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Orario fisso</p>
                   <h4 className="mt-1 font-display text-2xl font-bold text-primary-foreground">{format(activeDay, "EEEE d MMMM", { locale: it })}</h4>
                 </div>
                 <div className="rounded-full bg-primary-foreground/10 px-3 py-2 font-body text-xs font-semibold text-primary-foreground/80">1 slot al giorno</div>
@@ -262,23 +263,23 @@ const BookingSection = () => {
               {[1, 2].map(s => (
                 <div key={s} className="flex items-center gap-2">
                   <div className={`flex h-6 w-6 items-center justify-center rounded-full font-body text-xs font-bold transition ${step === s ? "bg-accent text-accent-foreground" : step > s ? "bg-accent/30 text-accent" : "bg-primary-foreground/10 text-primary-foreground/40"}`}>{s}</div>
-                  <span className={`font-body text-xs font-semibold transition ${step === s ? "text-primary-foreground" : "text-primary-foreground/40"}`}>{s === 1 ? "Dati base" : "Dettagli"}</span>
+                  <span className={`font-body text-xs font-semibold transition ${step === s ? "text-primary-foreground" : "text-primary-foreground/40"}`}>{s === 1 ? "Dati base" : "Dettagli gruppo"}</span>
                   {s < 2 && <div className="h-px w-5 bg-primary-foreground/15" />}
                 </div>
               ))}
             </div>
 
-            {/* Data */}
+            {/* Giorno selezionato */}
             <div className="mb-5 rounded-[1.5rem] border border-accent/20 bg-accent/10 p-4">
               <div className="flex items-start gap-3">
-                <Sparkles className="mt-0.5 h-5 w-5 text-accent" />
+                <ChefHat className="mt-0.5 h-5 w-5 text-accent" />
                 <div>
-                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Selezione attiva</p>
+                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Collab con Chicco</p>
                   <p className="mt-1 font-display text-2xl font-bold text-primary-foreground">
-                    {selectedDay && selectedSlot ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}` : "Scegli il giorno delle 21:00"}
+                    {selectedDay && selectedSlot ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}` : "Scegli il giorno ←"}
                   </p>
                   {selectedDay && getDayStatus(selectedDay) === "pending" && (
-                    <p className="mt-1 font-body text-xs font-semibold text-yellow-400">⏳ Ci sono già richieste in attesa</p>
+                    <p className="mt-1 font-body text-xs font-semibold text-yellow-400">⏳ Ci sono già richieste in attesa per questo giorno</p>
                   )}
                 </div>
               </div>
@@ -360,7 +361,7 @@ const BookingSection = () => {
                     </button>
                     <button type="button" onClick={handleSubmit} disabled={isSubmitting}
                       className="flex flex-1 items-center justify-center gap-2 rounded-full bg-accent py-3 font-body text-base font-semibold text-accent-foreground shadow-lg transition hover:scale-[1.02] disabled:opacity-50">
-                      {isSubmitting ? "Invio…" : "Richiedi le 21:00 🍳"}
+                      {isSubmitting ? "Invio…" : "Prenota le 21:00 🍳"}
                     </button>
                   </div>
                   <p className="text-center font-body text-xs text-primary-foreground/40">
