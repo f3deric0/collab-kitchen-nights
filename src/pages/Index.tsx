@@ -1,6 +1,6 @@
 import HeroSection from "@/components/HeroSection";
 import WhatIsCollab from "@/components/WhatIsCollab";
-import JoinRequestBanner from "@/components/JoinRequestBanner";
+import CollabBoard from "@/components/CollabBoard";
 import BookingSection from "@/components/BookingSection";
 import RecipesSection from "@/components/RecipesSection";
 import PantrySection from "@/components/PantrySection";
@@ -12,7 +12,7 @@ const Index = () => {
     <main className="overflow-x-hidden">
       <HeroSection />
       <WhatIsCollab />
-      <JoinRequestBanner />
+      <CollabBoard />
       <BookingSection />
       <RecipesSection />
       <PantrySection />
