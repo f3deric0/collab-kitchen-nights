@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { addDays, format, isSameDay, startOfWeek } from "date-fns";
+import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import { motion } from "framer-motion";
 import { Clock3, Sparkles, Users } from "lucide-react";
@@ -13,35 +13,40 @@ const dailySlot = "21:00";
 const BookingSection = () => {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(dailySlot);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [participants, setParticipants] = useState("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const today = startOfDay(new Date());
+
   const weekStart = useMemo(() => {
-    const today = new Date();
     const nextWeekBase = addDays(today, weekOffset * 7);
     return startOfWeek(nextWeekBase, { weekStartsOn: 1 });
-  }, [weekOffset]);
+  }, [today, weekOffset]);
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
 
-  const slotsForDay = (day: Date) => {
-    const today = startOfWeek(new Date(), { weekStartsOn: 1 });
-    return [
-      {
-        time: dailySlot,
-        available: day >= today,
-      },
-    ];
-  };
+  const isDayAvailable = (day: Date) => startOfDay(day) >= today;
 
-  const activeDay = selectedDay ?? weekDays[0];
+  const firstAvailableDay = useMemo(
+    () => weekDays.find((day) => isDayAvailable(day)) ?? weekDays[0],
+    [weekDays],
+  );
+
+  const slotsForDay = (day: Date) => [
+    {
+      time: dailySlot,
+      available: isDayAvailable(day),
+    },
+  ];
+
+  const activeDay = selectedDay && isDayAvailable(selectedDay) ? selectedDay : firstAvailableDay;
   const availableSlots = slotsForDay(activeDay);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -56,7 +61,7 @@ const BookingSection = () => {
     await new Promise((resolve) => setTimeout(resolve, 900));
     toast.success("Richiesta inviata per le 21:00! Ti ricontattiamo per la conferma finale.");
     setSelectedDay(null);
-    setSelectedSlot(null);
+    setSelectedSlot(dailySlot);
     setName("");
     setEmail("");
     setParticipants("");
@@ -78,10 +83,10 @@ const BookingSection = () => {
             Planner settimanale
           </p>
           <h2 className="font-display text-4xl font-extrabold text-primary-foreground sm:text-6xl">
-            Un solo slot al giorno: <span className="text-accent">sempre alle 21:00</span>.
+            Un solo slot disponibile al giorno: <span className="text-accent">21:00</span>.
           </h2>
           <p className="mt-5 font-body text-base leading-relaxed text-primary-foreground/72 sm:text-lg">
-            Selezioni il giorno, scegli lo slot fisso delle 21:00 e invii la richiesta in pochi secondi.
+            Scegli solo il giorno: l'orario è fisso, sempre alle 21:00, una richiesta per sera.
           </p>
         </motion.div>
 
@@ -124,27 +129,31 @@ const BookingSection = () => {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
               {weekDays.map((day) => {
                 const isActive = isSameDay(activeDay, day);
+                const isDisabled = !isDayAvailable(day);
 
                 return (
                   <button
                     key={day.toISOString()}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => {
                       setSelectedDay(day);
                       setSelectedSlot(dailySlot);
                     }}
                     className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${
-                      isActive
-                        ? "border-accent bg-accent text-accent-foreground shadow-lg"
-                        : "border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground hover:bg-primary-foreground/[0.08]"
+                      isDisabled
+                        ? "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.02] text-primary-foreground/35 opacity-55"
+                        : isActive
+                          ? "border-accent bg-accent text-accent-foreground shadow-lg"
+                          : "border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground hover:bg-primary-foreground/[0.08]"
                     }`}
                   >
-                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isActive ? "text-accent-foreground/80" : "text-primary-foreground/50"}`}>
+                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isActive && !isDisabled ? "text-accent-foreground/80" : "text-inherit"}`}>
                       {format(day, "EEE", { locale: it })}
                     </p>
                     <p className="mt-2 font-display text-3xl font-bold">{format(day, "d", { locale: it })}</p>
-                    <p className={`mt-3 font-body text-xs ${isActive ? "text-accent-foreground/85" : "text-primary-foreground/65"}`}>
-                      Slot unico: 21:00
+                    <p className="mt-3 font-body text-xs">
+                      {isDisabled ? "Giorno passato" : "Slot unico: 21:00"}
                     </p>
                   </button>
                 );
@@ -154,13 +163,13 @@ const BookingSection = () => {
             <div className="mt-6 rounded-[1.7rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-5">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Slot disponibile</p>
+                  <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Orario disponibile</p>
                   <h4 className="mt-1 font-display text-2xl font-bold text-primary-foreground">
                     {format(activeDay, "EEEE d MMMM", { locale: it })}
                   </h4>
                 </div>
                 <div className="rounded-full bg-primary-foreground/10 px-3 py-2 font-body text-xs font-semibold text-primary-foreground/80">
-                  Solo un orario
+                  1 slot al giorno
                 </div>
               </div>
 
@@ -169,18 +178,23 @@ const BookingSection = () => {
                   <button
                     key={slot.time}
                     type="button"
+                    disabled={!slot.available}
                     onClick={() => setSelectedSlot(slot.time)}
                     className={`flex items-center justify-between rounded-[1.2rem] border px-4 py-4 font-body text-sm font-semibold transition ${
-                      selectedSlot === slot.time
-                        ? "border-accent bg-accent text-accent-foreground"
-                        : "border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"
+                      !slot.available
+                        ? "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground/40"
+                        : selectedSlot === slot.time
+                          ? "border-accent bg-accent text-accent-foreground"
+                          : "border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"
                     }`}
                   >
                     <span className="inline-flex items-center gap-2 text-base">
                       <Clock3 className="h-4 w-4" />
                       {slot.time}
                     </span>
-                    <span className="text-[11px] uppercase tracking-[0.16em]">available</span>
+                    <span className="text-[11px] uppercase tracking-[0.16em]">
+                      {slot.available ? "slot fisso" : "non disponibile"}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -233,7 +247,7 @@ const BookingSection = () => {
                 <Users className="h-4 w-4" />
                 Prenotazione serale fissa
               </span>
-              <span className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">21:00 daily</span>
+              <span className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">21:00 only</span>
             </div>
 
             <button

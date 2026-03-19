@@ -64,16 +64,16 @@ const DishwasherShowcase = () => {
       <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="max-w-xl">
           <p className="mb-4 font-body text-sm uppercase tracking-[0.28em] text-muted-foreground">
-            Finale con personalità
+            Finale di cucina
           </p>
           <h2 className="mb-5 font-display text-4xl font-extrabold leading-none text-foreground sm:text-6xl">
-            L’unica vera admin qui è la lavastoviglie.
+            Sì, è proprio una lavastoviglie. E adesso si capisce al primo sguardo.
           </h2>
           <p className="mb-6 font-body text-lg leading-relaxed text-muted-foreground">
-            Passaci sopra col mouse o scorri la pagina: si muove lei, ma giudica comunque chi lascia i piatti "in ammollo" per tre giorni.
+            Passaci sopra col mouse o scorri la pagina: vedi la porta, il pannello comandi, il cestello piatti e i getti d'acqua in azione.
           </p>
           <div className="inline-flex rounded-full border border-border bg-card px-4 py-2 font-body text-sm text-foreground shadow-[0_14px_40px_hsl(var(--foreground)/0.08)]">
-            Battuta inclusa, detersivo no.
+            Nuova battuta: lava i piatti, non cancella chi li ha lasciati nel lavello.
           </div>
         </div>
 
@@ -100,7 +100,7 @@ const DishwasherShowcase = () => {
                   <span className="h-2.5 w-2.5 rounded-full bg-accent/80" />
                 </div>
                 <div className="font-body text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                  eco rinse
+                  lavastoviglie · eco wash
                 </div>
               </div>
 
@@ -109,9 +109,13 @@ const DishwasherShowcase = () => {
                 className="absolute inset-x-5 bottom-5 top-16 overflow-hidden rounded-[1.75rem] border border-border bg-[linear-gradient(180deg,hsl(var(--primary)/0.05),hsl(var(--muted)/0.9))]"
               >
                 <motion.div aria-hidden="true" className="absolute inset-0 opacity-70" style={{ background: sheen }} />
+                <div className="absolute left-1/2 top-4 h-3 w-24 -translate-x-1/2 rounded-full bg-secondary/70 shadow-inner" />
 
                 <div className="absolute inset-x-5 top-5 h-24 rounded-[1.5rem] border border-border bg-background/70 shadow-inner">
-                  <div className="mx-auto mt-4 h-3 w-24 rounded-full bg-muted" />
+                  <div className="mx-auto mt-4 flex w-[78%] items-center justify-between">
+                    <span className="font-body text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Programmi</span>
+                    <div className="h-3 w-24 rounded-full bg-muted" />
+                  </div>
                   <div className="mx-auto mt-4 flex w-[78%] justify-between">
                     {Array.from({ length: 5 }).map((_, index) => (
                       <span key={index} className="h-10 w-3 rounded-full bg-muted" />
@@ -123,17 +127,20 @@ const DishwasherShowcase = () => {
                   <div className="mb-4 flex items-center justify-between">
                     <div>
                       <p className="font-body text-xs uppercase tracking-[0.22em] text-muted-foreground">
-                        carico attuale
+                        porta e cestello
                       </p>
-                      <p className="font-display text-2xl font-bold text-foreground">Piatti in revisione</p>
+                      <p className="font-display text-2xl font-bold text-foreground">Lavastoviglie in azione</p>
                     </div>
                     <div className="rounded-full bg-accent px-3 py-1 font-body text-xs font-semibold text-accent-foreground">
-                      98% pulito
+                      piatti + bicchieri
                     </div>
                   </div>
 
                   <div className="relative mt-8 h-28 rounded-[1.25rem] border border-border bg-muted/70">
                     <div className="absolute inset-x-3 bottom-5 h-3 rounded-full bg-border" />
+                    <div className="absolute left-4 top-3 rounded-full bg-background/85 px-2 py-1 font-body text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      cestello piatti
+                    </div>
                     <div className="absolute inset-x-6 bottom-8 flex justify-between">
                       {rackPlates.map((_, index) => (
                         <div

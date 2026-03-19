@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
-import { MapPin } from "lucide-react";
-import heroImage from "@/assets/hero-dinner.jpg";
+import { MapPin, Sparkles } from "lucide-react";
+import heroImage from "@/assets/hero-collab-editorial.jpg";
 
 const HeroSection = () => {
   const scrollToBooking = () => {
@@ -8,30 +8,33 @@ const HeroSection = () => {
   };
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      {/* Background image */}
+    <section className="relative flex min-h-screen items-center justify-center overflow-hidden">
       <div className="absolute inset-0">
         <img
           src={heroImage}
-          alt="Cena condivisa nella cucina comune"
-          className="w-full h-full object-cover"
+          alt="Tavola apparecchiata per una cena collaborativa in una cucina moderna"
+          className="h-full w-full object-cover"
         />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(180deg, hsla(222, 56%, 11%, 0.55) 0%, hsla(222, 56%, 11%, 0.85) 100%)",
-          }}
-        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,hsl(var(--primary)/0.18),hsl(var(--primary)/0.88))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--accent)/0.16),transparent_42%)]" />
       </div>
 
-      {/* Content */}
-      <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
+      <div className="relative z-10 mx-auto max-w-4xl px-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary-foreground/15 bg-primary/35 px-4 py-2 font-body text-xs font-semibold uppercase tracking-[0.24em] text-primary-foreground/88 backdrop-blur-md"
+        >
+          <Sparkles className="h-4 w-4 text-accent" />
+          Dinner collab · ogni sera
+        </motion.div>
+
         <motion.h1
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="font-display text-5xl sm:text-7xl lg:text-8xl font-extrabold tracking-tight text-primary-foreground leading-[0.95] mb-6"
+          className="mb-6 font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-primary-foreground sm:text-7xl lg:text-8xl"
         >
           Collab @<br />
           <span className="text-gradient">Milestone Lombos</span>
@@ -41,10 +44,9 @@ const HeroSection = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="font-body text-lg sm:text-xl text-primary-foreground/80 max-w-2xl mx-auto mb-10 leading-relaxed"
+          className="mx-auto mb-10 max-w-2xl font-body text-lg leading-relaxed text-primary-foreground/82 sm:text-xl"
         >
-          Unisci ingredienti, talento e buona compagnia. Ogni sera, la cucina
-          comune diventa il palcoscenico di una cena indimenticabile.
+          Una tavola più bella, una cucina piena di luce e un solo obiettivo: trasformare ogni sera in una cena condivisa da ricordare.
         </motion.p>
 
         <motion.div
@@ -54,22 +56,21 @@ const HeroSection = () => {
         >
           <button
             onClick={scrollToBooking}
-            className="inline-flex items-center gap-2 bg-accent text-accent-foreground font-body font-semibold text-lg px-8 py-4 rounded-full hover:scale-105 transition-transform duration-300 shadow-lg hover:shadow-xl"
+            className="inline-flex items-center gap-2 rounded-full bg-accent px-8 py-4 font-body text-lg font-semibold text-accent-foreground shadow-lg transition-transform duration-300 hover:scale-105 hover:shadow-xl"
           >
             Prenota una Collab
           </button>
         </motion.div>
       </div>
 
-      {/* Location badge */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1, delay: 0.8 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
+        className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2"
       >
-        <div className="flex items-center gap-2 bg-primary/60 backdrop-blur-md text-primary-foreground/90 font-body text-sm px-5 py-2.5 rounded-full border border-primary-foreground/10">
-          <MapPin className="w-4 h-4 text-secondary" />
+        <div className="flex items-center gap-2 rounded-full border border-primary-foreground/10 bg-primary/60 px-5 py-2.5 font-body text-sm text-primary-foreground/90 backdrop-blur-md">
+          <MapPin className="h-4 w-4 text-secondary" />
           Milestone Carcavelos Lombos – Carcavelos, Portugal
         </div>
       </motion.div>
