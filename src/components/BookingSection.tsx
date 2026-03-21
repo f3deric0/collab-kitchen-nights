@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock3, ChefHat, Users, ArrowRight, ArrowLeft, ShoppingBag, Lock } from "lucide-react";
+import { Clock3, ChefHat, Users, ArrowRight, ArrowLeft, ShoppingBag, Lock, Crown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 const dailySlot = "21:00";
-
 const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  as string;
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string;
 const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  as string;
@@ -22,10 +21,8 @@ async function sendConfirmationEmail(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      template_params: params,
+      service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY, template_params: params,
     }),
   });
   if (!res.ok) throw new Error(`EmailJS error: ${await res.text()}`);
@@ -42,8 +39,9 @@ const BookingSection = () => {
   const [participants, setParticipants] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Step 2 — il primo nome è sempre "Chicco" e non modificabile
+  // Step 2
   const [step, setStep] = useState<1 | 2>(1);
+  const [chiefCollab, setChiefCollab] = useState(""); // capo collab
   const [participantNames, setParticipantNames] = useState<string[]>([]);
   const [missingItem, setMissingItem] = useState("");
   const [publishMissing, setPublishMissing] = useState(false);
@@ -63,14 +61,12 @@ const BookingSection = () => {
       ]);
       if (busyRes.data) setBusyDates(new Set(busyRes.data.map((d: any) => d.date)));
       if (bookRes.data) {
-        const pending = new Set<string>();
-        const confirmed = new Set<string>();
+        const pending = new Set<string>(); const confirmed = new Set<string>();
         for (const b of bookRes.data) {
           if (b.status === "pending") pending.add(b.requested_date);
           if (b.status === "confirmed") confirmed.add(b.requested_date);
         }
-        setPendingDates(pending);
-        setConfirmedDates(confirmed);
+        setPendingDates(pending); setConfirmedDates(confirmed);
       }
     };
     void fetchAvailability();
@@ -88,14 +84,12 @@ const BookingSection = () => {
     if (pendingDates.has(dateStr)) return "pending";
     return "free";
   };
-
   const isDayAvailable = (day: Date) => { const s = getDayStatus(day); return s === "free" || s === "pending"; };
   const firstAvailableDay = useMemo(() => weekDays.find(isDayAvailable) ?? weekDays[0], [weekDays, busyDates, confirmedDates]);
   const activeDay = selectedDay && isDayAvailable(selectedDay) ? selectedDay : firstAvailableDay;
 
   const getDayClasses = (day: Date) => {
-    const status = getDayStatus(day);
-    const isActive = isSameDay(activeDay, day);
+    const status = getDayStatus(day); const isActive = isSameDay(activeDay, day);
     if (status === "past") return "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.02] text-primary-foreground/35 opacity-55";
     if (status === "busy") return "cursor-not-allowed border-red-500/30 bg-red-500/10 text-primary-foreground/40 opacity-70";
     if (status === "confirmed") return "cursor-not-allowed border-green-500/30 bg-green-500/10 text-primary-foreground/40 opacity-70";
@@ -103,21 +97,16 @@ const BookingSection = () => {
     if (status === "pending") return "border-yellow-400/40 bg-yellow-400/10 text-primary-foreground hover:bg-yellow-400/20 cursor-pointer";
     return "border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground hover:bg-primary-foreground/[0.08]";
   };
-
   const getDayLabel = (day: Date) => {
     const s = getDayStatus(day);
-    if (s === "past") return "Passato";
-    if (s === "busy") return "Non disponibile";
-    if (s === "confirmed") return "Già confermato";
-    if (s === "pending") return "⏳ In attesa";
+    if (s === "past") return "Passato"; if (s === "busy") return "Non disponibile";
+    if (s === "confirmed") return "Già confermato"; if (s === "pending") return "⏳ In attesa";
     return "21:00 · libero";
   };
 
-  // Numero partecipanti OLTRE a Chicco (che è sempre il primo)
+  // Nomi partecipanti: slot = totale - 1 (il capo collab è separato)
   const numParticipants = parseInt(participants, 10) || 0;
-  // Gli slot liberi = partecipanti - 1 (Chicco è già nel conto)
-  const slotsForOthers = Math.max(0, numParticipants - 1);
-
+  const slotsForOthers = Math.max(0, numParticipants - 2); // -1 capo collab, -1 Chicco
   useEffect(() => {
     setParticipantNames(prev => {
       const arr = [...prev];
@@ -128,8 +117,7 @@ const BookingSection = () => {
 
   const handleGoStep2 = () => {
     if (!selectedDay || !selectedSlot || !name || !email || !participants) {
-      toast.error("Compila tutti i campi obbligatori prima di continuare.");
-      return;
+      toast.error("Compila tutti i campi obbligatori prima di continuare."); return;
     }
     setStep(2);
   };
@@ -140,10 +128,13 @@ const BookingSection = () => {
       const dateStr = format(selectedDay!, "yyyy-MM-dd");
       const dateLabel = format(selectedDay!, "EEEE d MMMM yyyy", { locale: it });
 
-      // Tutti i nomi: Chicco + gli altri
-      const allNames = ["Chicco", ...participantNames].filter(Boolean);
+      // Costruisci lista nomi: capo collab + Chicco + altri
+      const chief = chiefCollab.trim() || name;
+      const allNames = [chief, "Chicco", ...participantNames].filter((n, i, arr) => n && arr.indexOf(n) === i);
+
       const notesParts = [
         notes || null,
+        `Capo collab: ${chief}`,
         allNames.length > 0 ? `Partecipanti: ${allNames.join(", ")}` : null,
         missingItem && publishMissing ? `manca ${missingItem}` : null,
         missingItem && !publishMissing ? `serve: ${missingItem}` : null,
@@ -151,25 +142,15 @@ const BookingSection = () => {
       const fullNotes = notesParts.join(" — ") || null;
 
       const { error: dbError } = await (supabase as any).from("booking_requests").insert({
-        name,
-        email,
-        participants: numParticipants,
-        requested_date: dateStr,
-        requested_time: selectedSlot,
-        notes: fullNotes,
-        status: "pending",
+        name, email, participants: numParticipants,
+        requested_date: dateStr, requested_time: selectedSlot,
+        notes: fullNotes, status: "pending",
       });
       if (dbError) throw dbError;
-
       setPendingDates(prev => new Set([...prev, dateStr]));
 
       if (EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY) {
-        await sendConfirmationEmail({
-          to_name: name, to_email: email,
-          date: `${dateLabel} alle ${selectedSlot}`,
-          participants: String(numParticipants),
-          notes: fullNotes ?? "–",
-        }).catch(console.warn);
+        await sendConfirmationEmail({ to_name: name, to_email: email, date: `${dateLabel} alle ${selectedSlot}`, participants: String(numParticipants), notes: fullNotes ?? "–" }).catch(console.warn);
       }
 
       toast.success(
@@ -178,17 +159,12 @@ const BookingSection = () => {
           : `Sei in lista d'attesa per il ${format(selectedDay!, "d MMM", { locale: it })} alle 21:00!`,
         { duration: 7000 }
       );
-
       // Reset
-      setSelectedDay(null); setSelectedSlot(dailySlot);
-      setName(""); setEmail(""); setParticipants(""); setNotes("");
-      setParticipantNames([]); setMissingItem(""); setPublishMissing(false); setStep(1);
+      setSelectedDay(null); setSelectedSlot(dailySlot); setName(""); setEmail(""); setParticipants(""); setNotes("");
+      setChiefCollab(""); setParticipantNames([]); setMissingItem(""); setPublishMissing(false); setStep(1);
     } catch (err: any) {
-      console.error("Supabase error:", err);
-      toast.error(`Errore: ${err?.message ?? "Controlla la connessione e riprova."}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+      console.error(err); toast.error(`Errore: ${err?.message ?? "Riprova."}`);
+    } finally { setIsSubmitting(false); }
   };
 
   const slotAvailable = isDayAvailable(activeDay);
@@ -204,13 +180,13 @@ const BookingSection = () => {
             <span className="text-accent">prenota qui</span>.
           </h2>
           <p className="mt-5 font-body text-base leading-relaxed text-primary-foreground/72 sm:text-lg">
-            Scegli il giorno, compila il form e sei dentro. La tua richiesta va in lista d'attesa finché Chicco la conferma.
+            Scegli il giorno, compila il form. La tua richiesta va in lista d'attesa finché Chicco la conferma.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-4 font-body text-xs text-primary-foreground/60">
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-primary-foreground/20 bg-primary-foreground/5" /> Libero</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-yellow-400/40 bg-yellow-400/20" /> In attesa</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-green-500/30 bg-green-500/15" /> Confermato</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-red-500/30 bg-red-500/10" /> Non disponibile</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-primary-foreground/20 bg-primary-foreground/5"/> Libero</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-yellow-400/40 bg-yellow-400/20"/> In attesa</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-green-500/30 bg-green-500/15"/> Confermato</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-red-500/30 bg-red-500/10"/> Non disponibile</span>
           </div>
         </motion.div>
 
@@ -226,46 +202,44 @@ const BookingSection = () => {
                 </h3>
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setWeekOffset(c => Math.max(0, c - 1))} disabled={weekOffset === 0}
+                <button type="button" onClick={() => setWeekOffset(c => Math.max(0, c-1))} disabled={weekOffset===0}
                   className="rounded-full border border-primary-foreground/15 px-4 py-2 font-body text-sm font-semibold text-primary-foreground transition hover:bg-primary-foreground/10 disabled:opacity-40">Prec.</button>
-                <button type="button" onClick={() => setWeekOffset(c => c + 1)}
+                <button type="button" onClick={() => setWeekOffset(c => c+1)}
                   className="rounded-full border border-primary-foreground/15 px-4 py-2 font-body text-sm font-semibold text-primary-foreground transition hover:bg-primary-foreground/10">Succ.</button>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
               {weekDays.map(day => {
                 const status = getDayStatus(day);
-                const isDisabled = status === "past" || status === "busy" || status === "confirmed";
+                const isDisabled = status==="past"||status==="busy"||status==="confirmed";
                 return (
                   <button key={day.toISOString()} type="button" disabled={isDisabled}
                     onClick={() => { if (!isDisabled) { setSelectedDay(day); setSelectedSlot(dailySlot); setStep(1); } }}
                     className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${getDayClasses(day)}`}>
-                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isSameDay(activeDay, day) && !isDisabled ? "text-accent-foreground/80" : "text-inherit"}`}>
-                      {format(day, "EEE", { locale: it })}
+                    <p className={`font-body text-xs uppercase tracking-[0.18em] ${isSameDay(activeDay,day)&&!isDisabled?"text-accent-foreground/80":"text-inherit"}`}>
+                      {format(day,"EEE",{locale:it})}
                     </p>
-                    <p className="mt-2 font-display text-3xl font-bold">{format(day, "d", { locale: it })}</p>
+                    <p className="mt-2 font-display text-3xl font-bold">{format(day,"d",{locale:it})}</p>
                     <p className="mt-3 font-body text-[11px] leading-tight">{getDayLabel(day)}</p>
                   </button>
                 );
               })}
             </div>
-
             <div className="mt-6 rounded-[1.7rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-5">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="font-body text-xs uppercase tracking-[0.18em] text-primary-foreground/45">Orario fisso</p>
-                  <h4 className="mt-1 font-display text-2xl font-bold text-primary-foreground">{format(activeDay, "EEEE d MMMM", { locale: it })}</h4>
+                  <h4 className="mt-1 font-display text-2xl font-bold text-primary-foreground">{format(activeDay,"EEEE d MMMM",{locale:it})}</h4>
                 </div>
                 <div className="rounded-full bg-primary-foreground/10 px-3 py-2 font-body text-xs font-semibold text-primary-foreground/80">1 slot al giorno</div>
               </div>
               <button type="button" disabled={!slotAvailable} onClick={() => setSelectedSlot(dailySlot)}
                 className={`flex w-full items-center justify-between rounded-[1.2rem] border px-4 py-4 font-body text-sm font-semibold transition ${
-                  !slotAvailable ? "cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground/40"
-                  : selectedSlot === dailySlot ? "border-accent bg-accent text-accent-foreground"
-                  : "border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"}`}>
-                <span className="inline-flex items-center gap-2 text-base"><Clock3 className="h-4 w-4" />{dailySlot}</span>
-                <span className="text-[11px] uppercase tracking-[0.16em]">{slotAvailable ? "slot fisso" : "non disponibile"}</span>
+                  !slotAvailable?"cursor-not-allowed border-primary-foreground/10 bg-primary-foreground/[0.03] text-primary-foreground/40"
+                  :selectedSlot===dailySlot?"border-accent bg-accent text-accent-foreground"
+                  :"border-primary-foreground/10 bg-background text-foreground hover:-translate-y-0.5 hover:border-accent/60"}`}>
+                <span className="inline-flex items-center gap-2 text-base"><Clock3 className="h-4 w-4"/>{dailySlot}</span>
+                <span className="text-[11px] uppercase tracking-[0.16em]">{slotAvailable?"slot fisso":"non disponibile"}</span>
               </button>
             </div>
           </motion.div>
@@ -276,14 +250,14 @@ const BookingSection = () => {
 
             {/* Step indicator */}
             <div className="mb-5 flex items-center gap-2">
-              {[1, 2].map(s => (
+              {[1,2].map(s=>(
                 <div key={s} className="flex items-center gap-2">
                   <div className={`flex h-6 w-6 items-center justify-center rounded-full font-body text-xs font-bold transition
-                    ${step === s ? "bg-accent text-accent-foreground" : step > s ? "bg-accent/30 text-accent" : "bg-primary-foreground/10 text-primary-foreground/40"}`}>{s}</div>
-                  <span className={`font-body text-xs font-semibold transition ${step === s ? "text-primary-foreground" : "text-primary-foreground/40"}`}>
-                    {s === 1 ? "Dati base" : "Dettagli gruppo"}
+                    ${step===s?"bg-accent text-accent-foreground":step>s?"bg-accent/30 text-accent":"bg-primary-foreground/10 text-primary-foreground/40"}`}>{s}</div>
+                  <span className={`font-body text-xs font-semibold transition ${step===s?"text-primary-foreground":"text-primary-foreground/40"}`}>
+                    {s===1?"Dati base":"Gruppo & dettagli"}
                   </span>
-                  {s < 2 && <div className="h-px w-5 bg-primary-foreground/15" />}
+                  {s<2&&<div className="h-px w-5 bg-primary-foreground/15"/>}
                 </div>
               ))}
             </div>
@@ -291,16 +265,14 @@ const BookingSection = () => {
             {/* Giorno selezionato */}
             <div className="mb-5 rounded-[1.5rem] border border-accent/20 bg-accent/10 p-4">
               <div className="flex items-start gap-3">
-                <ChefHat className="mt-0.5 h-5 w-5 text-accent" />
+                <ChefHat className="mt-0.5 h-5 w-5 text-accent"/>
                 <div>
                   <p className="font-body text-xs uppercase tracking-[0.2em] text-primary-foreground/55">Collab con Chicco</p>
                   <p className="mt-1 font-display text-2xl font-bold text-primary-foreground">
-                    {selectedDay && selectedSlot
-                      ? `${format(selectedDay, "EEE d MMM", { locale: it })} · ${selectedSlot}`
-                      : "Scegli il giorno ←"}
+                    {selectedDay&&selectedSlot?`${format(selectedDay,"EEE d MMM",{locale:it})} · ${selectedSlot}`:"Scegli il giorno ←"}
                   </p>
-                  {selectedDay && getDayStatus(selectedDay) === "pending" && (
-                    <p className="mt-1 font-body text-xs font-semibold text-yellow-400">⏳ Ci sono già richieste in attesa per questo giorno</p>
+                  {selectedDay&&getDayStatus(selectedDay)==="pending"&&(
+                    <p className="mt-1 font-body text-xs font-semibold text-yellow-400">⏳ Ci sono già richieste in attesa</p>
                   )}
                 </div>
               </div>
@@ -308,81 +280,94 @@ const BookingSection = () => {
 
             <AnimatePresence mode="wait">
               {/* ── STEP 1 ── */}
-              {step === 1 && (
-                <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }} className="space-y-4">
+              {step===1&&(
+                <motion.div key="step1" initial={{ opacity:0,x:20 }} animate={{ opacity:1,x:0 }} exit={{ opacity:0,x:-20 }} transition={{ duration:0.25 }} className="space-y-4">
                   <div>
                     <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Il tuo nome *</Label>
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Il tuo nome"
-                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
+                    <Input value={name} onChange={e=>setName(e.target.value)} placeholder="Il tuo nome"
+                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35"/>
                   </div>
                   <div>
                     <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Email * <span className="text-xs normal-case tracking-normal text-primary-foreground/45">(riceverai la conferma)</span></Label>
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="la-tua@email.com"
-                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
+                    <Input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="la-tua@email.com"
+                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35"/>
                   </div>
                   <div>
-                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">
-                      Partecipanti * <span className="text-xs normal-case tracking-normal text-primary-foreground/45">(incluso Chicco)</span>
-                    </Label>
-                    <Input type="number" min={1} max={10} value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Quanti sarete in totale?"
-                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
+                    <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Partecipanti * <span className="text-xs normal-case tracking-normal text-primary-foreground/45">(incluso Chicco)</span></Label>
+                    <Input type="number" min={1} max={10} value={participants} onChange={e=>setParticipants(e.target.value)} placeholder="Quanti sarete in totale?"
+                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35"/>
                   </div>
                   <div>
                     <Label className="mb-1.5 block font-body text-sm text-primary-foreground/80">Idee per la cena</Label>
-                    <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                    <Textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3}
                       placeholder="Carbonara battle? Curry night? Dimmi il mood."
-                      className="resize-none border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35" />
+                      className="resize-none border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-primary-foreground placeholder:text-primary-foreground/35"/>
                   </div>
                   <button type="button" onClick={handleGoStep2}
                     className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-accent py-3.5 font-body text-base font-semibold text-accent-foreground shadow-lg transition hover:scale-[1.02]">
-                    Continua <ArrowRight className="h-4 w-4" />
+                    Continua <ArrowRight className="h-4 w-4"/>
                   </button>
                 </motion.div>
               )}
 
               {/* ── STEP 2 ── */}
-              {step === 2 && (
-                <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }} className="space-y-5">
+              {step===2&&(
+                <motion.div key="step2" initial={{ opacity:0,x:20 }} animate={{ opacity:1,x:0 }} exit={{ opacity:0,x:-20 }} transition={{ duration:0.25 }} className="space-y-5">
 
-                  {/* Lista partecipanti */}
+                  {/* Capo collab */}
                   <div>
-                    <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
-                      <Users className="mr-1.5 inline h-4 w-4" />
-                      Chi viene? ({numParticipants} {numParticipants === 1 ? "persona" : "persone"})
+                    <Label className="mb-2 block font-body text-sm font-semibold text-primary-foreground/80">
+                      <Crown className="mr-1.5 inline h-4 w-4 text-accent"/> Chi è il capo collab? *
                     </Label>
-                    <div className="space-y-2">
-                      {/* Chicco — sempre primo, non modificabile */}
-                      <div className="relative">
-                        <Input
-                          value="Chicco"
-                          readOnly
-                          className="border-accent/30 bg-accent/10 font-body text-sm font-semibold text-accent pr-10 cursor-default"
-                        />
-                        <Lock className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-accent/60" />
-                      </div>
-                      {/* Gli altri partecipanti */}
-                      {participantNames.map((pName, idx) => (
-                        <Input key={idx} value={pName}
-                          onChange={e => setParticipantNames(arr => arr.map((v, i) => i === idx ? e.target.value : v))}
-                          placeholder={`Persona ${idx + 2}`}
-                          className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30" />
-                      ))}
-                    </div>
+                    <p className="mb-2 font-body text-xs text-primary-foreground/50">La persona incaricata di organizzare la serata (ingredienti, orario, ecc.)</p>
+                    <Input value={chiefCollab} onChange={e=>setChiefCollab(e.target.value)}
+                      placeholder={`${name || "Es: Loris"} (tu, oppure un altro nome)`}
+                      className="border-accent/30 bg-accent/8 font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30"/>
                   </div>
+
+                  {/* Nomi partecipanti */}
+                  {numParticipants > 0 && (
+                    <div>
+                      <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
+                        <Users className="mr-1.5 inline h-4 w-4"/> Chi viene? ({numParticipants} persone)
+                      </Label>
+                      <div className="space-y-2">
+                        {/* Chicco — fisso */}
+                        <div className="relative">
+                          <Input value="Chicco" readOnly className="border-accent/30 bg-accent/10 font-body text-sm font-semibold text-accent pr-10 cursor-default"/>
+                          <Lock className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-accent/60"/>
+                        </div>
+                        {/* Capo collab — se compilato */}
+                        {chiefCollab.trim() && chiefCollab.trim() !== "Chicco" && (
+                          <div className="relative">
+                            <Input value={chiefCollab} readOnly className="border-yellow-400/30 bg-yellow-400/8 font-body text-sm font-semibold text-yellow-600 pr-10 cursor-default"/>
+                            <Crown className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-yellow-500"/>
+                          </div>
+                        )}
+                        {/* Altri partecipanti */}
+                        {participantNames.map((pName,idx)=>(
+                          <Input key={idx} value={pName}
+                            onChange={e=>setParticipantNames(arr=>arr.map((v,i)=>i===idx?e.target.value:v))}
+                            placeholder={`Persona ${idx+3}`}
+                            className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30"/>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Manca qualcosa */}
                   <div className="rounded-[1.5rem] border border-primary-foreground/10 bg-primary-foreground/[0.03] p-4">
                     <Label className="mb-3 block font-body text-sm font-semibold text-primary-foreground/80">
-                      <ShoppingBag className="mr-1.5 inline h-4 w-4 text-orange-400" /> Manca qualcosa o qualcuno?
+                      <ShoppingBag className="mr-1.5 inline h-4 w-4 text-orange-400"/> Manca qualcosa o qualcuno?
                     </Label>
-                    <Input value={missingItem} onChange={e => setMissingItem(e.target.value)}
+                    <Input value={missingItem} onChange={e=>setMissingItem(e.target.value)}
                       placeholder="Es: guanciale, vino bianco, un quarto cuoco…"
-                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30" />
-                    {missingItem && (
-                      <motion.label initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                      className="border-primary-foreground/15 bg-primary-foreground/[0.04] font-body text-sm text-primary-foreground placeholder:text-primary-foreground/30"/>
+                    {missingItem&&(
+                      <motion.label initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }}
                         className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-accent/20 bg-accent/8 p-3">
-                        <input type="checkbox" checked={publishMissing} onChange={e => setPublishMissing(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded accent-[hsl(var(--accent))]" />
+                        <input type="checkbox" checked={publishMissing} onChange={e=>setPublishMissing(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded accent-[hsl(var(--accent))]"/>
                         <div>
                           <p className="font-body text-sm font-semibold text-primary-foreground">Pubblica nella bacheca Collab aperte</p>
                           <p className="font-body text-xs text-primary-foreground/50">Gli altri residenti vedranno che manca "{missingItem}" e potranno unirsi</p>
@@ -392,13 +377,13 @@ const BookingSection = () => {
                   </div>
 
                   <div className="flex gap-3">
-                    <button type="button" onClick={() => setStep(1)}
+                    <button type="button" onClick={()=>setStep(1)}
                       className="flex items-center gap-2 rounded-full border border-primary-foreground/20 px-5 py-3 font-body text-sm font-semibold text-primary-foreground/70 transition hover:bg-primary-foreground/10">
-                      <ArrowLeft className="h-4 w-4" /> Indietro
+                      <ArrowLeft className="h-4 w-4"/> Indietro
                     </button>
                     <button type="button" onClick={handleSubmit} disabled={isSubmitting}
                       className="flex flex-1 items-center justify-center gap-2 rounded-full bg-accent py-3 font-body text-base font-semibold text-accent-foreground shadow-lg transition hover:scale-[1.02] disabled:opacity-50">
-                      {isSubmitting ? "Invio…" : "Prenota le 21:00 🍳"}
+                      {isSubmitting?"Invio…":"Prenota le 21:00 🍳"}
                     </button>
                   </div>
                   <p className="text-center font-body text-xs text-primary-foreground/40">
