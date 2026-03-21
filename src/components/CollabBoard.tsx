@@ -27,23 +27,8 @@ const COLLAB_IDEAS = [
 const CollabBoard = () => {
   const [proposals, setProposals] = useState<CollabProposal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
-  const [confirmedDates, setConfirmedDates] = useState<Set<string>>(new Set());
-
-  const [showProposeForm, setShowProposeForm] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [joiningCollab, setJoiningCollab] = useState<CollabProposal | null>(null);
-
-  // Propose form
-  const [propName, setPropName] = useState("");
-  const [propEmail, setPropEmail] = useState("");
-  const [propDate, setPropDate] = useState("");
-  const [propIdea, setPropIdea] = useState("");
-  const [propMissing, setPropMissing] = useState("");
-  const [propSubmitting, setPropSubmitting] = useState(false);
-  const [dateError, setDateError] = useState("");
-
-  // Join form
   const [joinName, setJoinName] = useState("");
   const [joinEmail, setJoinEmail] = useState("");
   const [joinBrings, setJoinBrings] = useState("");
@@ -52,77 +37,36 @@ const CollabBoard = () => {
   const fetchData = async () => {
     setLoading(true);
     const today = new Date().toISOString().split("T")[0];
-    const c = supabase as any;
-    const [proposalsRes, busyRes, bookRes] = await Promise.all([
-      c.from("booking_requests")
-        .select("id,name,requested_date,requested_time,participants,notes,status")
-        .eq("status", "pending")
-        .gte("requested_date", today)
-        .not("notes", "ilike", "JOIN REQUEST%")
-        .order("requested_date", { ascending: true })
-        .limit(10),
-      c.from("busy_days").select("date"),
-      c.from("booking_requests").select("requested_date,status").eq("status", "confirmed").gte("requested_date", today),
-    ]);
-    setProposals(proposalsRes.data ?? []);
-    setBusyDates(new Set((busyRes.data ?? []).map((d: any) => d.date)));
-    setConfirmedDates(new Set((bookRes.data ?? []).map((b: any) => b.requested_date)));
+    const { data } = await (supabase as any)
+      .from("booking_requests")
+      .select("id,name,requested_date,requested_time,participants,notes,status")
+      .eq("status", "pending")
+      .gte("requested_date", today)
+      .not("notes", "ilike", "JOIN REQUEST%")
+      .order("requested_date", { ascending: true })
+      .limit(10);
+    setProposals(data ?? []);
     setLoading(false);
   };
 
   useEffect(() => { void fetchData(); }, []);
 
-  // Quando l'utente cambia la data nel form proposta, valida subito
-  const handleDateChange = (date: string) => {
-    setPropDate(date);
-    setDateError("");
-    if (!date) return;
-    if (busyDates.has(date)) {
-      setDateError("❌ Chicco è impegnato quel giorno — scegli un'altra data.");
-    } else if (confirmedDates.has(date)) {
-      setDateError("❌ C'è già una collab confermata quel giorno — scegli un'altra data.");
-    }
-  };
-
   const getMissing = (notes: string | null) => {
     if (!notes) return null;
-    const patterns = [/manca[no]?\s+([^,.!?—]+)/i, /serve\s+([^,.!?—]+)/i, /cerco\s+([^,.!?—]+)/i];
+    const patterns = [/manca[no]?\s+([^,.!?—]+)/i, /serve\s+([^,.!?—]+)/i];
     for (const p of patterns) { const m = notes.match(p); if (m) return m[1].trim(); }
     return null;
   };
 
   const getIdea = (notes: string | null) => {
     if (!notes) return null;
-    const cleaned = notes.replace(/manca[no]?\s+[^,.!?—]+/gi, "").replace(/JOIN REQUEST[^)]+\)/gi, "").replace(/Partecipanti:[^—]+/gi, "").trim().replace(/^—\s*/, "").replace(/\s*—\s*$/, "");
+    const cleaned = notes.replace(/manca[no]?\s+[^,.!?—]+/gi, "").replace(/Partecipanti:[^—]+/gi, "").trim().replace(/^—\s*/, "").replace(/\s*—\s*$/, "");
     return cleaned.split(/[.!?]/)[0].trim() || null;
   };
 
-  const handlePropose = async () => {
-    if (!propName || !propEmail || !propDate) { toast.error("Inserisci nome, email e data."); return; }
-    if (busyDates.has(propDate)) { toast.error("Chicco è impegnato quel giorno. Scegli un'altra data."); return; }
-    if (confirmedDates.has(propDate)) { toast.error("C'è già una collab confermata quel giorno."); return; }
-
-    setPropSubmitting(true);
-    try {
-      const notes = [propIdea, propMissing ? `manca ${propMissing}` : ""].filter(Boolean).join(" — ");
-      const { error } = await (supabase as any).from("booking_requests").insert({
-        name: propName, email: propEmail,
-        participants: 1,
-        requested_date: propDate,
-        requested_time: "21:00",
-        notes: notes || null,
-        status: "pending",
-      });
-      if (error) throw error;
-      toast.success("Collab proposta! Apparirà subito nella bacheca 🍳");
-      setShowProposeForm(false);
-      setPropName(""); setPropEmail(""); setPropDate(""); setPropIdea(""); setPropMissing(""); setDateError("");
-      await fetchData();
-    } catch (e) {
-      toast.error("Errore nell'invio. Riprova.");
-    } finally {
-      setPropSubmitting(false);
-    }
+  // Clic idea → scrolla direttamente al form prenotazione
+  const handleIdeaClick = () => {
+    document.getElementById("booking")?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleJoin = async () => {
@@ -131,8 +75,7 @@ const CollabBoard = () => {
     try {
       const notes = `JOIN REQUEST — si unisce alla collab di ${joiningCollab.name} (ref: ${joiningCollab.id})${joinBrings ? ` — porta: ${joinBrings}` : ""}`;
       const { error } = await (supabase as any).from("booking_requests").insert({
-        name: joinName, email: joinEmail,
-        participants: 1,
+        name: joinName, email: joinEmail, participants: 1,
         requested_date: joiningCollab.requested_date,
         requested_time: joiningCollab.requested_time ?? "21:00",
         notes, status: "pending",
@@ -141,14 +84,9 @@ const CollabBoard = () => {
       toast.success("Richiesta inviata! Chicco vi metterà in contatto 🎉");
       setShowJoinForm(false); setJoiningCollab(null);
       setJoinName(""); setJoinEmail(""); setJoinBrings("");
-    } catch (e) {
-      toast.error("Errore nell'invio. Riprova.");
-    } finally {
-      setJoinSubmitting(false);
-    }
+    } catch { toast.error("Errore nell'invio. Riprova."); }
+    finally { setJoinSubmitting(false); }
   };
-
-  const todayStr = new Date().toISOString().split("T")[0];
 
   const inputClass = "w-full rounded-xl border border-input bg-background px-3 py-2.5 font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40";
 
@@ -156,7 +94,6 @@ const CollabBoard = () => {
     <>
       <section id="collab-board" className="bg-background px-6 py-20 sm:py-28">
         <div className="mx-auto max-w-5xl">
-          {/* Header */}
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mb-10 text-center">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/8 px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.28em] text-accent">
               <Sparkles className="h-3.5 w-3.5" /> Collab aperte
@@ -165,17 +102,16 @@ const CollabBoard = () => {
               Unisciti a una <span className="text-secondary">serata</span>.
             </h2>
             <p className="mx-auto mt-4 max-w-xl font-body text-base leading-relaxed text-muted-foreground">
-              Qualcuno ha già un'idea ma gli manca un ingrediente o un compagno di cucina. Unisciti, oppure proponi la tua collab.
+              Qualcuno ha già un'idea ma gli manca un ingrediente o un compagno. Unisciti, oppure proponi la tua.
             </p>
           </motion.div>
 
-          {/* Idee rapide */}
+          {/* Idee rapide → scrollano al #booking */}
           <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }} className="mb-8 overflow-x-auto">
             <div className="flex gap-3 pb-2">
-              <span className="shrink-0 self-center font-body text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground whitespace-nowrap">Idee per la prossima settimana →</span>
+              <span className="shrink-0 self-center font-body text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground whitespace-nowrap">Idee prossima settimana →</span>
               {COLLAB_IDEAS.map(idea => (
-                <button key={idea.idea}
-                  onClick={() => { setPropIdea(`${idea.idea} — ${idea.desc}`); setShowProposeForm(true); }}
+                <button key={idea.idea} onClick={handleIdeaClick}
                   className="shrink-0 rounded-2xl border border-border bg-card px-4 py-2.5 text-left transition hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-md">
                   <span className="text-lg">{idea.emoji}</span>
                   <p className="mt-1 font-body text-xs font-semibold text-foreground">{idea.idea}</p>
@@ -238,77 +174,17 @@ const CollabBoard = () => {
             </div>
           )}
 
-          {/* CTA proponi */}
+          {/* CTA proponi → scrolla al booking */}
           <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.2 }} className="mt-8 flex justify-center">
-            <button onClick={() => setShowProposeForm(true)}
+            <button onClick={() => document.getElementById("booking")?.scrollIntoView({ behavior: "smooth" })}
               className="inline-flex items-center gap-2.5 rounded-full border-2 border-dashed border-accent/40 bg-accent/5 px-6 py-3 font-body text-sm font-bold text-accent transition hover:border-accent hover:bg-accent/10">
-              <Plus className="h-4 w-4" /> Proponi la tua collab
+              <Plus className="h-4 w-4" /> Proponi la tua collab con Chicco
             </button>
           </motion.div>
         </div>
       </section>
 
-      {/* ── Modal: Proponi ── */}
-      <AnimatePresence>
-        {showProposeForm && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 px-4 backdrop-blur-sm overflow-y-auto py-8"
-            onClick={e => { if (e.target === e.currentTarget) setShowProposeForm(false); }}>
-            <motion.div initial={{ opacity: 0, scale: 0.92, y: 24 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 24 }}
-              transition={{ type: "spring", stiffness: 300, damping: 28 }}
-              className="w-full max-w-md rounded-[2rem] border border-border bg-card p-6 shadow-2xl">
-              <div className="mb-5 flex items-start justify-between">
-                <div>
-                  <p className="mb-1 font-body text-xs font-bold uppercase tracking-[0.24em] text-accent">Nuova proposta</p>
-                  <h3 className="font-display text-2xl font-bold text-foreground">Proponi una collab</h3>
-                  <p className="mt-1 font-body text-sm text-muted-foreground">Descrivi la tua idea — gli altri potranno unirti.</p>
-                </div>
-                <button onClick={() => setShowProposeForm(false)} className="rounded-full p-2 text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">Il tuo nome *</label>
-                    <input value={propName} onChange={e => setPropName(e.target.value)} placeholder="Federico" className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">Data *</label>
-                    <input type="date" value={propDate} min={todayStr} onChange={e => handleDateChange(e.target.value)}
-                      className={`${inputClass} ${dateError ? "border-red-400 focus:ring-red-400/40" : ""}`} />
-                    {dateError && <p className="mt-1 font-body text-xs text-red-500">{dateError}</p>}
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">Email *</label>
-                  <input type="email" value={propEmail} onChange={e => setPropEmail(e.target.value)} placeholder="tua@email.com" className={inputClass} />
-                </div>
-                <div>
-                  <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">La tua idea 💡</label>
-                  <textarea value={propIdea} onChange={e => setPropIdea(e.target.value)} rows={2}
-                    placeholder="Es: Pasta battle, ognuno porta la sua ricetta preferita…"
-                    className={`${inputClass} resize-none`} />
-                </div>
-                <div>
-                  <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">
-                    <ShoppingBag className="mr-1 inline h-3.5 w-3.5 text-orange-500" /> Manca qualcosa? (opzionale)
-                  </label>
-                  <input value={propMissing} onChange={e => setPropMissing(e.target.value)}
-                    placeholder="Es: guanciale, pasta fresca, vino bianco…" className={inputClass} />
-                  <p className="mt-1 font-body text-xs text-muted-foreground">Apparirà come badge — gli altri possono offrirsi di portarlo</p>
-                </div>
-              </div>
-
-              <button onClick={handlePropose} disabled={propSubmitting || !!dateError || !propDate}
-                className="mt-5 w-full rounded-full bg-accent py-3 font-body text-sm font-bold text-accent-foreground shadow-md transition hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100">
-                {propSubmitting ? "Pubblicazione…" : "Pubblica la tua collab 🍳"}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Modal: Unisciti ── */}
+      {/* Modal Unisciti */}
       <AnimatePresence>
         {showJoinForm && joiningCollab && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -327,16 +203,11 @@ const CollabBoard = () => {
                 </div>
                 <button onClick={() => { setShowJoinForm(false); setJoiningCollab(null); }} className="rounded-full p-2 text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
               </div>
-
               {getMissing(joiningCollab.notes) && (
                 <div className="mb-4 rounded-[1.2rem] border border-orange-400/30 bg-orange-400/8 px-4 py-3">
-                  <p className="font-body text-sm">
-                    <span className="font-semibold">🛒 Porta con te:</span>{" "}
-                    <span className="font-bold text-orange-600">{getMissing(joiningCollab.notes)}</span>
-                  </p>
+                  <p className="font-body text-sm"><span className="font-semibold">🛒 Porta con te:</span>{" "}<span className="font-bold text-orange-600">{getMissing(joiningCollab.notes)}</span></p>
                 </div>
               )}
-
               <div className="space-y-4">
                 <div>
                   <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">Il tuo nome *</label>
@@ -347,13 +218,10 @@ const CollabBoard = () => {
                   <input type="email" value={joinEmail} onChange={e => setJoinEmail(e.target.value)} placeholder="tua@email.com" className={inputClass} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block font-body text-xs font-semibold text-foreground">
-                    <ShoppingBag className="mr-1 inline h-3.5 w-3.5 text-accent" /> Cosa porti? (opzionale)
-                  </label>
+                  <label className="mb-1.5 block font-body text-xs font-semibold text-foreground"><ShoppingBag className="mr-1 inline h-3.5 w-3.5 text-accent" />Cosa porti? (opzionale)</label>
                   <input value={joinBrings} onChange={e => setJoinBrings(e.target.value)} placeholder="Es: guanciale, vino, dessert…" className={inputClass} />
                 </div>
               </div>
-
               <button onClick={handleJoin} disabled={joinSubmitting}
                 className="mt-5 w-full rounded-full bg-accent py-3 font-body text-sm font-bold text-accent-foreground shadow-md transition hover:scale-[1.02] disabled:opacity-50">
                 {joinSubmitting ? "Invio…" : "Manda richiesta di join 🙌"}
