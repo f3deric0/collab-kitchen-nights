@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   CalendarX, Check, Clock, LogOut, Plus, Save,
-  ShieldAlert, ShieldCheck, Sparkles, Trash2, X, Trophy, Star, Crown,
+  ShieldAlert, ShieldCheck, Sparkles, Trash2, X, Trophy, Star, Crown, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,11 +19,11 @@ import { it } from "date-fns/locale";
 const recipeDifficultyOptions = ["Facile", "Media", "Difficile"] as const;
 const pantryCategoryOptions   = ["base", "spice", "fresh", "condiment", "other"] as const;
 
-type AuthMode    = "signin" | "signup";
+type AuthMode = "signin" | "signup";
 type RecipeDraft = Pick<PublicRecipe, "title" | "description" | "difficulty" | "time_label">;
 type PantryDraft = Pick<PublicPantryIngredient, "name" | "category" | "notes">;
-type BusyDay     = { id: string; date: string; reason: string | null };
-type Booking     = {
+type BusyDay = { id: string; date: string; reason: string | null };
+type Booking = {
   id: string; name: string; email: string;
   participants: number; requested_date: string;
   requested_time: string | null; notes: string | null;
@@ -35,6 +35,7 @@ type CollabHistory = {
   collab_date: string; participants: number;
   rating: number | null; emoji: string | null;
   participants_names: string[] | null;
+  booking_request_id: string | null;
 };
 
 const emptyRecipe: RecipeDraft = { title: "", description: "", difficulty: "Facile", time_label: "30 min" };
@@ -68,90 +69,116 @@ const StarPicker = ({ value, onChange }: { value: number|null; onChange: (v:numb
   <div className="flex items-center gap-1">
     {[1,2,3,4,5].map(s => (
       <button key={s} type="button" onClick={() => onChange(s===value?null:s)} className="transition hover:scale-110">
-        <Star className={`h-5 w-5 ${s<=(value??0)?"fill-accent text-accent":"text-muted-foreground/30 hover:text-accent/60"}`}/>
+        <Star className={`h-6 w-6 ${s<=(value??0)?"fill-accent text-accent":"text-muted-foreground/30 hover:text-accent/60"}`}/>
       </button>
     ))}
   </div>
 );
 
-// ── Helpers per estrarre dati dalle note ─────────────────────────
-const extractChief = (notes: string|null): string|null => {
-  if (!notes) return null;
-  const m = notes.match(/Capo collab:\s*([^—,\n]+)/i);
+// ── Helpers note ─────────────────────────────────────────────────
+const extractChief = (notes: string|null) => {
+  const m = notes?.match(/Capo collab:\s*([^—,\n]+)/i);
   return m?m[1].trim():null;
 };
-
 const extractNames = (notes: string|null): string[] => {
-  if (!notes) return [];
-  const m = notes.match(/Partecipanti:\s*([^—\n]+)/i);
+  const m = notes?.match(/Partecipanti:\s*([^—\n]+)/i);
   if (!m) return [];
   return m[1].split(",").map(n=>n.trim()).filter(Boolean);
 };
-
-const extractIdea = (notes: string|null): string|null => {
-  if (!notes) return null;
-  // Prima parte prima di "—"
-  const first = notes.split("—")[0].trim();
-  if (!first || first.toLowerCase().startsWith("capo") || first.toLowerCase().startsWith("partecipanti")) return null;
-  return first;
+const extractIdea = (notes: string|null) => {
+  const first = notes?.split("—")[0]?.trim() ?? "";
+  if (!first||first.toLowerCase().startsWith("capo")||first.toLowerCase().startsWith("partecipanti")) return null;
+  return first||null;
 };
-
-const pickEmoji = (notes: string|null): string => {
-  if (!notes) return "🍳";
-  const lower = notes.toLowerCase();
-  if (lower.includes("pizza")) return "🍕";
-  if (lower.includes("pasta")||lower.includes("carbonara")||lower.includes("spaghetti")) return "🍝";
-  if (lower.includes("taco")||lower.includes("messic")) return "🌮";
-  if (lower.includes("sushi")||lower.includes("giappon")) return "🍣";
-  if (lower.includes("curry")||lower.includes("indian")) return "🥘";
-  if (lower.includes("bowl")||lower.includes("insalata")) return "🥗";
-  if (lower.includes("ramen")||lower.includes("noodle")) return "🍜";
+const pickEmoji = (notes: string|null) => {
+  const l = notes?.toLowerCase()??"";
+  if (l.includes("pizza")) return "🍕";
+  if (l.includes("pasta")||l.includes("carbonara")) return "🍝";
+  if (l.includes("taco")) return "🌮";
+  if (l.includes("sushi")) return "🍣";
+  if (l.includes("curry")) return "🥘";
+  if (l.includes("bowl")) return "🥗";
+  if (l.includes("ramen")) return "🍜";
   return "🍳";
 };
 
-// ── Auto-aggiunge la collab allo storico quando viene confermata ─
-const autoAddToHistory = async (booking: Booking): Promise<CollabHistory|null> => {
-  try {
-    const chief = extractChief(booking.notes);
-    const names = extractNames(booking.notes);
+// ── Auto-processo: sposta le collab passate ──────────────────────
+// Chiamato ogni volta che l'admin si logga
+const processExpiredBookings = async (): Promise<{ moved: number; deleted: number }> => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const cutoff = yesterday.toISOString().split("T")[0];
 
-    // Ordina: capo collab primo, poi gli altri (rimuovi duplicati)
-    let orderedNames: string[] = [];
-    if (chief) {
-      orderedNames = [chief, ...names.filter(n=>n!==chief)];
-    } else {
-      orderedNames = names.length>0 ? names : [booking.name];
-    }
-    // Rimuovi duplicati preservando ordine
-    orderedNames = orderedNames.filter((n,i,arr)=>arr.indexOf(n)===i).filter(Boolean);
+  const c = supabase as any;
 
-    const idea = extractIdea(booking.notes);
-    const title = idea || `Collab di ${chief||booking.name}`;
+  // 1. Trova collab confermate con data passata non ancora nello storico
+  const { data: confirmedPast } = await c
+    .from("booking_requests")
+    .select("*")
+    .eq("status", "confirmed")
+    .lte("requested_date", cutoff);
 
-    const { data, error } = await (supabase as any)
+  let moved = 0;
+  if (confirmedPast && confirmedPast.length > 0) {
+    // Controlla quali sono già nello storico
+    const { data: existingIds } = await c
       .from("collab_history")
-      .insert({
-        title,
-        description: booking.notes || null,
+      .select("booking_request_id")
+      .in("booking_request_id", confirmedPast.map((b: Booking) => b.id));
+
+    const alreadyIn = new Set((existingIds??[]).map((x: any) => x.booking_request_id));
+
+    for (const booking of confirmedPast as Booking[]) {
+      if (alreadyIn.has(booking.id)) continue;
+
+      const chief = extractChief(booking.notes);
+      const names = extractNames(booking.notes);
+      let orderedNames = chief
+        ? [chief, ...names.filter(n=>n!==chief)]
+        : names.length>0 ? names : [booking.name];
+      orderedNames = orderedNames.filter((n,i,a)=>a.indexOf(n)===i).filter(Boolean);
+
+      const idea = extractIdea(booking.notes);
+      await c.from("collab_history").insert({
+        title: idea || `Collab di ${chief||booking.name}`,
+        description: booking.notes||null,
         collab_date: booking.requested_date,
         participants: booking.participants,
         rating: null,
         emoji: pickEmoji(booking.notes),
         participants_names: orderedNames,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      // Ignora se già esiste (duplicate)
-      console.warn("autoAddToHistory:", error.message);
-      return null;
+        booking_request_id: booking.id,
+      });
+      moved++;
     }
-    return data as CollabHistory;
-  } catch (e) {
-    console.warn("autoAddToHistory exception:", e);
-    return null;
   }
+
+  // 2. Elimina rifiutate con data passata
+  const { data: rejectedPast } = await c
+    .from("booking_requests")
+    .select("id")
+    .eq("status", "rejected")
+    .lte("requested_date", cutoff);
+
+  let deleted = 0;
+  if (rejectedPast && rejectedPast.length > 0) {
+    await c.from("booking_requests").delete().in("id", rejectedPast.map((x: any) => x.id));
+    deleted = rejectedPast.length;
+  }
+
+  // 3. Elimina pending con data passata
+  const { data: pendingPast } = await c
+    .from("booking_requests")
+    .select("id")
+    .eq("status", "pending")
+    .lte("requested_date", cutoff);
+
+  if (pendingPast && pendingPast.length > 0) {
+    await c.from("booking_requests").delete().in("id", pendingPast.map((x: any) => x.id));
+    deleted += pendingPast.length;
+  }
+
+  return { moved, deleted };
 };
 
 const Admin = () => {
@@ -171,12 +198,22 @@ const Admin = () => {
   const [bookings,     setBookings]     = useState<Booking[]>([]);
   const [historyItems, setHistoryItems] = useState<CollabHistory[]>([]);
 
+  // Storico: collab senza rating (chiedono rating)
+  const [needsRating, setNeedsRating] = useState<CollabHistory[]>([]);
+
+  // Editing storico
+  const [editingItem, setEditingItem] = useState<CollabHistory|null>(null);
+  const [editTitle,   setEditTitle]   = useState("");
+  const [editDesc,    setEditDesc]    = useState("");
+  const [editEmoji,   setEditEmoji]   = useState("🍳");
+  const [editNames,   setEditNames]   = useState("");
+  const [editRating,  setEditRating]  = useState<number|null>(null);
+
   const [newRecipe,     setNewRecipe]     = useState<RecipeDraft>(emptyRecipe);
   const [newPantryItem, setNewPantryItem] = useState<PantryDraft>(emptyPantry);
   const [newBusyDate,   setNewBusyDate]   = useState("");
   const [newBusyReason, setNewBusyReason] = useState("");
 
-  // Storico form manuale
   const [newHistTitle,  setNewHistTitle]  = useState("");
   const [newHistDesc,   setNewHistDesc]   = useState("");
   const [newHistDate,   setNewHistDate]   = useState("");
@@ -209,7 +246,33 @@ const Admin = () => {
       setPantryItems(((pantryR.data as PublicPantryIngredient[]|null)??DEFAULT_PANTRY).sort((a,b)=>a.display_order-b.display_order));
       setBusyDays((busyR.data as BusyDay[]|null)??[]);
       setBookings((bookR.data as Booking[]|null)??[]);
-      setHistoryItems((histR.data as CollabHistory[]|null)??[]);
+      const hist = (histR.data as CollabHistory[]|null)??[];
+      setHistoryItems(hist);
+      setNeedsRating(hist.filter(h=>h.rating===null));
+
+      if (adminOk) {
+        // Auto-processo collab scadute in background
+        const { moved, deleted } = await processExpiredBookings();
+        if (moved > 0 || deleted > 0) {
+          // Ricarica storico e prenotazioni aggiornati
+          const [bookR2, histR2] = await Promise.all([
+            c.from("booking_requests").select("id,name,email,participants,requested_date,requested_time,notes,status,created_at").order("requested_date"),
+            c.from("collab_history").select("*").order("collab_date",{ascending:false}),
+          ]);
+          setBookings((bookR2.data as Booking[]|null)??[]);
+          const hist2 = (histR2.data as CollabHistory[]|null)??[];
+          setHistoryItems(hist2);
+          setNeedsRating(hist2.filter(h=>h.rating===null));
+
+          if (moved > 0) {
+            toast.success(`🏆 ${moved} collab ${moved===1?"è stata aggiunta":"sono state aggiunte"} automaticamente allo storico! Assegna il rating.`);
+            setActiveTab("history");
+          }
+          if (deleted > 0) {
+            toast.info(`🗑️ ${deleted} prenotazione/i scaduta/e eliminata/e automaticamente.`);
+          }
+        }
+      }
     } catch(e) {
       console.error(e); toast.error("Errore nel caricamento admin."); setIsAdmin(false);
     } finally { setLoadingData(false); setCheckingAccess(false); }
@@ -233,7 +296,7 @@ const Admin = () => {
     return () => { mounted=false; subscription.unsubscribe(); };
   }, []);
 
-  // ── auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────────────────
   const handleAuth = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!email||!password) { toast.error("Inserisci email e password."); return; }
@@ -249,7 +312,7 @@ const Admin = () => {
   };
   const handleSignOut = async () => { await supabase.auth.signOut(); toast.success("Uscito dall'admin."); };
 
-  // ── ricette ───────────────────────────────────────────────────────────────
+  // ── Ricette ───────────────────────────────────────────────────────────────
   const createRecipe = async () => {
     if (!newRecipe.title||!newRecipe.description) { toast.error("Compila titolo e descrizione."); return; }
     setSavingRecipe(true);
@@ -276,7 +339,7 @@ const Admin = () => {
     finally { setSavingRecipe(false); }
   };
 
-  // ── dispensa ──────────────────────────────────────────────────────────────
+  // ── Dispensa ──────────────────────────────────────────────────────────────
   const createPantryItem = async () => {
     if (!newPantryItem.name) { toast.error("Inserisci il nome."); return; }
     setSavingPantry(true);
@@ -303,7 +366,7 @@ const Admin = () => {
     finally { setSavingPantry(false); }
   };
 
-  // ── giorni occupati ───────────────────────────────────────────────────────
+  // ── Giorni occupati ───────────────────────────────────────────────────────
   const addBusyDay = async () => {
     if (!newBusyDate) { toast.error("Scegli una data."); return; }
     if (busyDays.some(d=>d.date===newBusyDate)) { toast.error("Già bloccata."); return; }
@@ -325,29 +388,39 @@ const Admin = () => {
     finally { setSavingBusy(false); }
   };
 
-  // ── booking status — AUTO-AGGIUNGE ALLO STORICO QUANDO CONFERMATA ─────────
+  // ── Booking status — auto-storico se confermata ───────────────────────────
   const updateBookingStatus = async (id: string, status: Booking["status"]) => {
     setSavingBook(true);
     try {
       const {error} = await (supabase as any).from("booking_requests").update({status}).eq("id",id);
       if (error) throw error;
-
       setBookings(b=>b.map(x=>x.id===id?{...x,status}:x));
 
       if (status==="confirmed") {
-        // Trova la prenotazione e aggiungila automaticamente allo storico
         const booking = bookings.find(b=>b.id===id);
         if (booking) {
-          const newHistItem = await autoAddToHistory({...booking,status:"confirmed"});
-          if (newHistItem) {
-            setHistoryItems(h=>[newHistItem,...h]);
-            toast.success("✅ Confermata! Aggiunta automaticamente allo storico 🏆");
-          } else {
-            toast.success("✅ Confermata!");
+          const chief = extractChief(booking.notes);
+          const names = extractNames(booking.notes);
+          let orderedNames = chief?[chief,...names.filter(n=>n!==chief)]:names.length>0?names:[booking.name];
+          orderedNames = orderedNames.filter((n,i,a)=>a.indexOf(n)===i).filter(Boolean);
+          const idea = extractIdea(booking.notes);
+          const {data:newHist,error:he} = await (supabase as any).from("collab_history").insert({
+            title:idea||`Collab di ${chief||booking.name}`,
+            description:booking.notes||null,
+            collab_date:booking.requested_date,
+            participants:booking.participants,
+            rating:null, emoji:pickEmoji(booking.notes),
+            participants_names:orderedNames,
+            booking_request_id:booking.id,
+          }).select("*").single();
+          if (!he && newHist) {
+            setHistoryItems(h=>[newHist,...h]);
+            setNeedsRating(n=>[newHist,...n]);
+            toast.success("✅ Confermata! Aggiunta allo storico — vai al tab Storico per il rating 🏆");
+            return;
           }
-        } else {
-          toast.success("✅ Confermata!");
         }
+        toast.success("✅ Confermata!");
       } else {
         toast.success("❌ Rifiutata");
       }
@@ -355,7 +428,59 @@ const Admin = () => {
     finally { setSavingBook(false); }
   };
 
-  // ── storico manuale ───────────────────────────────────────────────────────
+  // ── Storico: rating rapido ────────────────────────────────────────────────
+  const saveHistoryRating = async (id: string, rating: number|null) => {
+    setSavingHist(true);
+    try {
+      const {error} = await (supabase as any).from("collab_history").update({rating}).eq("id",id);
+      if (error) throw error;
+      setHistoryItems(h=>h.map(x=>x.id===id?{...x,rating}:x));
+      setNeedsRating(n=>n.filter(x=>x.id!==id));
+      toast.success("Rating salvato ⭐");
+    } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
+    finally { setSavingHist(false); }
+  };
+
+  // ── Storico: modifica ────────────────────────────────────────────────────
+  const openEdit = (item: CollabHistory) => {
+    setEditingItem(item);
+    setEditTitle(item.title);
+    setEditDesc(item.description??"");
+    setEditEmoji(item.emoji??"🍳");
+    setEditNames((item.participants_names??[]).join(", "));
+    setEditRating(item.rating);
+  };
+
+  const saveEdit = async () => {
+    if (!editingItem) return;
+    setSavingHist(true);
+    try {
+      const names = editNames.split(",").map(n=>n.trim()).filter(Boolean);
+      const {error} = await (supabase as any).from("collab_history").update({
+        title:editTitle, description:editDesc||null,
+        emoji:editEmoji, participants_names:names.length>0?names:null,
+        rating:editRating,
+      }).eq("id",editingItem.id);
+      if (error) throw error;
+      setHistoryItems(h=>h.map(x=>x.id===editingItem.id?{...x,title:editTitle,description:editDesc||null,emoji:editEmoji,participants_names:names.length>0?names:null,rating:editRating}:x));
+      setNeedsRating(n=>n.filter(x=>x.id!==editingItem.id));
+      setEditingItem(null); toast.success("Storico aggiornato ✓");
+    } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
+    finally { setSavingHist(false); }
+  };
+
+  const deleteHistoryItem = async (id: string) => {
+    setSavingHist(true);
+    try {
+      const {error} = await (supabase as any).from("collab_history").delete().eq("id",id);
+      if (error) throw error;
+      setHistoryItems(h=>h.filter(x=>x.id!==id));
+      setNeedsRating(n=>n.filter(x=>x.id!==id));
+      toast.success("Eliminato.");
+    } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
+    finally { setSavingHist(false); }
+  };
+
   const addHistoryItem = async () => {
     if (!newHistTitle||!newHistDate) { toast.error("Titolo e data obbligatori."); return; }
     setSavingHist(true);
@@ -369,29 +494,10 @@ const Admin = () => {
       }).select("*").single();
       if (error) throw error;
       setHistoryItems(h=>[data,...h]);
+      if (!newHistRating) setNeedsRating(n=>[data,...n]);
       setNewHistTitle(""); setNewHistDesc(""); setNewHistDate(""); setNewHistPeople("2");
       setNewHistRating(null); setNewHistEmoji("🍳"); setNewHistNames("");
-      toast.success("Aggiunto allo storico! 🍳");
-    } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
-    finally { setSavingHist(false); }
-  };
-
-  const saveHistoryRating = async (id: string, rating: number|null) => {
-    setSavingHist(true);
-    try {
-      const {error} = await (supabase as any).from("collab_history").update({rating}).eq("id",id);
-      if (error) throw error;
-      setHistoryItems(h=>h.map(x=>x.id===id?{...x,rating}:x));
-      toast.success("Rating salvato ⭐");
-    } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
-    finally { setSavingHist(false); }
-  };
-
-  const deleteHistoryItem = async (id: string) => {
-    setSavingHist(true);
-    try {
-      const {error} = await (supabase as any).from("collab_history").delete().eq("id",id);
-      if (error) throw error; setHistoryItems(h=>h.filter(x=>x.id!==id)); toast.success("Eliminato.");
+      toast.success("Aggiunto! 🍳");
     } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
     finally { setSavingHist(false); }
   };
@@ -400,17 +506,16 @@ const Admin = () => {
     setSavingHist(true);
     try {
       const today = new Date().toISOString().split("T")[0];
-      const {data:expired} = await (supabase as any).from("booking_requests").select("id").eq("status","pending").lt("requested_date",today);
-      if (!expired||expired.length===0) { toast.info("Nessuna proposta scaduta."); setCleanupCount(0); return; }
-      const {error} = await (supabase as any).from("booking_requests").delete().in("id",expired.map((x:any)=>x.id));
-      if (error) throw error;
-      setCleanupCount(expired.length);
-      toast.success(`${expired.length} proposte scadute eliminate! 🗑️`);
+      const {data:exp} = await (supabase as any).from("booking_requests").select("id").eq("status","pending").lt("requested_date",today);
+      if (!exp||exp.length===0) { toast.info("Nessuna proposta scaduta."); setCleanupCount(0); return; }
+      const {error} = await (supabase as any).from("booking_requests").delete().in("id",exp.map((x:any)=>x.id));
+      if (error) throw error; setCleanupCount(exp.length);
+      toast.success(`${exp.length} proposte scadute eliminate!`);
     } catch(e) { toast.error(e instanceof Error?e.message:"Errore"); }
     finally { setSavingHist(false); }
   };
 
-  // ── helpers calendario ────────────────────────────────────────────────────
+  // ── Helpers calendario ────────────────────────────────────────────────────
   const calMonths  = buildCalendarMonths();
   const busySet    = new Set(busyDays.map(d=>d.date));
   const bookingMap = new Map<string,Booking[]>();
@@ -445,7 +550,7 @@ const Admin = () => {
 
         {checkingAccess ? (
           <div className="rounded-[2rem] border border-border bg-card p-10 text-center">
-            <p className="font-body text-muted-foreground">Caricamento…</p>
+            <p className="font-body text-muted-foreground">Caricamento e sincronizzazione storico…</p>
           </div>
         ) : !session ? (
           <div className="mx-auto max-w-xl rounded-[2rem] border border-border bg-card p-8 shadow-lg">
@@ -467,8 +572,7 @@ const Admin = () => {
               <div><label className="mb-1.5 block font-body text-sm font-medium">Password</label>
               <Input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Minimo 6 caratteri"/></div>
               <Button type="submit" className="w-full rounded-full font-body font-semibold">
-                <ShieldCheck className="h-4 w-4"/>
-                {authMode==="signin"?"Entra nell'admin":"Crea account"}
+                <ShieldCheck className="h-4 w-4"/>{authMode==="signin"?"Entra nell'admin":"Crea account"}
               </Button>
             </form>
           </div>
@@ -485,7 +589,7 @@ const Admin = () => {
                 {id:"recipes",  label:"🍽 Ricette"},
                 {id:"pantry",   label:"🥘 Dispensa"},
                 {id:"calendar", label:"📅 Calendario"},
-                {id:"history",  label:"🏆 Storico"},
+                {id:"history",  label:`🏆 Storico${needsRating.length>0?` (${needsRating.length} ⭐)`:""}` },
               ] as const).map(tab=>(
                 <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
                   className={`shrink-0 flex-1 rounded-xl px-4 py-2.5 font-body text-sm font-semibold transition ${activeTab===tab.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground"}`}>
@@ -523,8 +627,7 @@ const Admin = () => {
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <span className="rounded-full bg-muted px-3 py-1 font-body text-xs font-semibold uppercase text-muted-foreground">#{i+1}</span>
                         <label className="flex items-center gap-2 font-body text-sm text-muted-foreground">
-                          <input type="checkbox" checked={recipe.is_active??true} onChange={e=>setRecipes(c=>c.map(r=>r.id===recipe.id?{...r,is_active:e.target.checked}:r))} className="h-4 w-4 rounded"/>
-                          Visibile
+                          <input type="checkbox" checked={recipe.is_active??true} onChange={e=>setRecipes(c=>c.map(r=>r.id===recipe.id?{...r,is_active:e.target.checked}:r))} className="h-4 w-4 rounded"/> Visibile
                         </label>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -623,14 +726,12 @@ const Admin = () => {
                                 const hasPending=dayBooks.some(b=>b.status==="pending");
                                 const hasConfirmed=dayBooks.some(b=>b.status==="confirmed");
                                 const isPast=key<todayStr;
-                                return(
-                                  <div key={d} className={`aspect-square flex items-center justify-center rounded-lg font-body text-xs font-semibold
-                                    ${isPast?"text-muted-foreground/30":"text-foreground"}
-                                    ${isBusy?"bg-red-500/20 border border-red-500/40":""}
-                                    ${!isBusy&&hasConfirmed?"bg-green-500/20 border border-green-500/35":""}
-                                    ${!isBusy&&!hasConfirmed&&hasPending?"bg-yellow-400/20 border border-yellow-400/40":""}
-                                  `}>{d}</div>
-                                );
+                                return(<div key={d} className={`aspect-square flex items-center justify-center rounded-lg font-body text-xs font-semibold
+                                  ${isPast?"text-muted-foreground/30":"text-foreground"}
+                                  ${isBusy?"bg-red-500/20 border border-red-500/40":""}
+                                  ${!isBusy&&hasConfirmed?"bg-green-500/20 border border-green-500/35":""}
+                                  ${!isBusy&&!hasConfirmed&&hasPending?"bg-yellow-400/20 border border-yellow-400/40":""}
+                                `}>{d}</div>);
                               })}
                             </div>
                           </div>
@@ -646,7 +747,7 @@ const Admin = () => {
                         {bookings.filter(b=>b.status==="pending").length} in attesa · {bookings.filter(b=>b.status==="confirmed").length} confermate
                       </p>
                       <p className="mt-0.5 font-body text-xs text-accent font-semibold">
-                        ✨ Confermando una prenotazione viene aggiunta automaticamente allo Storico
+                        ✨ Le collab confermate vengono aggiunte automaticamente allo Storico quando il giorno passa
                       </p>
                     </div>
                     {loadingData?(
@@ -659,31 +760,18 @@ const Admin = () => {
                     ):(
                       <div className="space-y-3">
                         {bookings.map(b=>{
-                          const chief = extractChief(b.notes);
-                          const names = extractNames(b.notes);
+                          const chief=extractChief(b.notes);
+                          const names=extractNames(b.notes);
                           return(
                             <div key={b.id} className="rounded-2xl border border-border bg-background p-4">
                               <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
                                 <div>
-                                  <p className="font-body text-sm font-bold text-foreground">{b.name}</p>
+                                  <p className="font-body text-sm font-bold">{b.name}</p>
                                   <p className="font-body text-xs text-muted-foreground">{b.email}</p>
-                                  {chief&&(
-                                    <div className="mt-1 flex items-center gap-1">
-                                      <Crown className="h-3 w-3 text-accent"/>
-                                      <p className="font-body text-xs text-accent font-semibold">Capo: {chief}</p>
-                                    </div>
-                                  )}
-                                  {names.length>0&&(
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                      {names.map(n=>(
-                                        <span key={n} className="rounded-full border border-border bg-muted/50 px-2 py-0.5 font-body text-[10px] text-muted-foreground">{n}</span>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {chief&&<div className="mt-1 flex items-center gap-1"><Crown className="h-3 w-3 text-accent"/><p className="font-body text-xs text-accent font-semibold">Capo: {chief}</p></div>}
+                                  {names.length>0&&<div className="mt-1 flex flex-wrap gap-1">{names.map(n=><span key={n} className="rounded-full border border-border bg-muted/50 px-2 py-0.5 font-body text-[10px] text-muted-foreground">{n}</span>)}</div>}
                                 </div>
-                                <span className={`rounded-full border px-3 py-1 font-body text-xs font-semibold ${statusBadge(b.status)}`}>
-                                  {statusLabel(b.status)}
-                                </span>
+                                <span className={`rounded-full border px-3 py-1 font-body text-xs font-semibold ${statusBadge(b.status)}`}>{statusLabel(b.status)}</span>
                               </div>
                               <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
                                 <p className="font-body text-sm"><span className="text-muted-foreground">📅 </span>{fmtDate(b.requested_date)} · {b.requested_time??"21:00"}</p>
@@ -694,7 +782,7 @@ const Admin = () => {
                                 <div className="flex gap-2">
                                   <Button size="sm" onClick={()=>updateBookingStatus(b.id,"confirmed")} disabled={savingBook}
                                     className="rounded-full font-body font-semibold bg-green-600 hover:bg-green-500 text-white">
-                                    <Check className="h-3.5 w-3.5"/> Conferma → Storico
+                                    <Check className="h-3.5 w-3.5"/> Conferma
                                   </Button>
                                   <Button size="sm" onClick={()=>updateBookingStatus(b.id,"rejected")} disabled={savingBook}
                                     variant="destructive" className="rounded-full font-body font-semibold">
@@ -704,9 +792,7 @@ const Admin = () => {
                               )}
                               {b.status!=="pending"&&(
                                 <Button size="sm" onClick={()=>updateBookingStatus(b.id,"pending")} disabled={savingBook}
-                                  variant="outline" className="rounded-full font-body text-xs text-muted-foreground">
-                                  Rimetti in attesa
-                                </Button>
+                                  variant="outline" className="rounded-full font-body text-xs text-muted-foreground">Rimetti in attesa</Button>
                               )}
                             </div>
                           );
@@ -715,7 +801,6 @@ const Admin = () => {
                     )}
                   </section>
                 </div>
-
                 <div className="space-y-4">
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <h2 className="font-display text-xl font-bold mb-1">Blocca un giorno</h2>
@@ -732,9 +817,7 @@ const Admin = () => {
                   </section>
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <h2 className="font-display text-xl font-bold mb-4">Giorni bloccati ({busyDays.length})</h2>
-                    {busyDays.length===0?(
-                      <p className="font-body text-xs text-muted-foreground">Nessun giorno bloccato.</p>
-                    ):(
+                    {busyDays.length===0?<p className="font-body text-xs text-muted-foreground">Nessun giorno bloccato.</p>:(
                       <div className="space-y-2">
                         {busyDays.map(day=>(
                           <div key={day.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2.5">
@@ -759,12 +842,42 @@ const Admin = () => {
             {activeTab==="history"&&(
               <div className="space-y-6">
 
+                {/* Needs rating alert */}
+                {needsRating.length>0&&(
+                  <div className="rounded-[2rem] border border-accent/30 bg-accent/8 p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Star className="h-4 w-4 text-accent"/>
+                      <p className="font-body text-sm font-bold text-foreground">
+                        {needsRating.length} {needsRating.length===1?"collab ha":"collab hanno"} bisogno di un rating!
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {needsRating.map(item=>(
+                        <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{item.emoji??"🍳"}</span>
+                            <div>
+                              <p className="font-body text-sm font-semibold">{item.title}</p>
+                              <p className="font-body text-xs text-muted-foreground">
+                                {format(new Date(item.collab_date+"T00:00:00"),"d MMM yyyy",{locale:it})}
+                              </p>
+                            </div>
+                          </div>
+                          <StarPicker value={item.rating} onChange={v=>saveHistoryRating(item.id,v)}/>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Cleanup */}
                 <section className="rounded-[2rem] border border-border bg-card p-6">
                   <div className="mb-4 flex items-start justify-between gap-4">
                     <div>
-                      <h2 className="font-display text-2xl font-bold">Pulizia proposte scadute</h2>
-                      <p className="mt-1 font-body text-sm text-muted-foreground">Elimina le prenotazioni "pending" con data già passata.</p>
+                      <h2 className="font-display text-2xl font-bold">Pulizia manuale</h2>
+                      <p className="mt-1 font-body text-sm text-muted-foreground">
+                        Le proposte scadute vengono eliminate automaticamente al login. Puoi anche farlo manualmente.
+                      </p>
                     </div>
                     <CalendarX className="mt-1 h-5 w-5 text-accent shrink-0"/>
                   </div>
@@ -772,9 +885,7 @@ const Admin = () => {
                     <Button onClick={cleanupExpiredProposals} disabled={savingHist} variant="destructive" className="rounded-full font-body font-semibold">
                       <Trash2 className="h-4 w-4"/> Elimina proposte scadute
                     </Button>
-                    {cleanupCount!==null&&(
-                      <p className="font-body text-sm text-muted-foreground">{cleanupCount===0?"Nessuna trovata.":`${cleanupCount} eliminate ✓`}</p>
-                    )}
+                    {cleanupCount!==null&&<p className="font-body text-sm text-muted-foreground">{cleanupCount===0?"Nessuna trovata.":`${cleanupCount} eliminate ✓`}</p>}
                   </div>
                 </section>
 
@@ -784,7 +895,6 @@ const Admin = () => {
                     <div>
                       <p className="mb-2 font-body text-xs font-semibold uppercase tracking-[0.22em] text-secondary">Aggiungi manuale</p>
                       <h2 className="font-display text-2xl font-bold">Nuova collab nello storico</h2>
-                      <p className="mt-1 font-body text-sm text-muted-foreground">Le collab confermate vengono aggiunte automaticamente. Usa questo form per aggiungerne di manuali.</p>
                     </div>
                     <Trophy className="h-5 w-5 text-accent mt-1"/>
                   </div>
@@ -800,41 +910,43 @@ const Admin = () => {
                       </div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Input value={newHistTitle} onChange={e=>setNewHistTitle(e.target.value)} placeholder="Nome collab (es: Carbonara Battle)"/>
+                      <Input value={newHistTitle} onChange={e=>setNewHistTitle(e.target.value)} placeholder="Nome collab"/>
                       <Input type="date" value={newHistDate} onChange={e=>setNewHistDate(e.target.value)}/>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                      <Textarea value={newHistDesc} onChange={e=>setNewHistDesc(e.target.value)} placeholder="Descrizione breve…" className="min-h-[70px] resize-none"/>
-                      <Input type="number" min={1} max={20} value={newHistPeople} onChange={e=>setNewHistPeople(e.target.value)} placeholder="Partecipanti"/>
+                      <Textarea value={newHistDesc} onChange={e=>setNewHistDesc(e.target.value)} placeholder="Descrizione…" className="min-h-[70px] resize-none"/>
+                      <Input type="number" min={1} max={20} value={newHistPeople} onChange={e=>setNewHistPeople(e.target.value)} placeholder="Persone"/>
                     </div>
                     <div>
                       <label className="mb-1.5 block font-body text-xs font-semibold text-muted-foreground">
-                        <Crown className="mr-1 inline h-3.5 w-3.5 text-accent"/>
-                        Partecipanti — primo = capo collab (separati da virgola)
+                        <Crown className="mr-1 inline h-3.5 w-3.5 text-accent"/>Partecipanti — primo = capo collab
                       </label>
-                      <Input value={newHistNames} onChange={e=>setNewHistNames(e.target.value)} placeholder="Es: Chicco, Loris, Marco, Sara"/>
+                      <Input value={newHistNames} onChange={e=>setNewHistNames(e.target.value)} placeholder="Es: Chicco, Loris, Marco"/>
                     </div>
                     <div>
                       <label className="mb-2 block font-body text-xs font-semibold text-muted-foreground">Rating</label>
                       <StarPicker value={newHistRating} onChange={setNewHistRating}/>
                     </div>
                     <Button onClick={addHistoryItem} disabled={savingHist} className="rounded-full font-body font-semibold">
-                      <Plus className="h-4 w-4"/> Aggiungi allo storico
+                      <Plus className="h-4 w-4"/> Aggiungi
                     </Button>
                   </div>
                 </section>
 
-                {/* Lista storico */}
+                {/* Lista storico con tasto modifica */}
                 <section className="rounded-[2rem] border border-border bg-card p-6">
                   <h2 className="font-display text-2xl font-bold mb-5">Storico collab ({historyItems.length})</h2>
-                  {loadingData?(
-                    <p className="text-sm text-muted-foreground">Caricamento…</p>
-                  ):historyItems.length===0?(
-                    <p className="font-body text-sm text-muted-foreground">Nessuna collab ancora. Conferma una prenotazione per vedere la magia! ✨</p>
+                  {loadingData?<p className="text-sm text-muted-foreground">Caricamento…</p>:historyItems.length===0?(
+                    <p className="font-body text-sm text-muted-foreground">Nessuna collab ancora. Si popolerà automaticamente quando le collab confermate passano di data! ✨</p>
                   ):(
                     <div className="space-y-3">
                       {historyItems.map(item=>(
-                        <div key={item.id} className="rounded-2xl border border-border bg-background p-4">
+                        <div key={item.id} className={`rounded-2xl border bg-background p-4 ${item.rating===null?"border-accent/30":"border-border"}`}>
+                          {item.rating===null&&(
+                            <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 font-body text-[11px] font-bold text-accent">
+                              <Star className="h-3 w-3"/> Rating mancante
+                            </div>
+                          )}
                           <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
                             <div className="flex items-center gap-3">
                               <span className="text-2xl">{item.emoji??"🍳"}</span>
@@ -854,11 +966,15 @@ const Admin = () => {
                                 )}
                               </div>
                             </div>
-                            <Button onClick={()=>deleteHistoryItem(item.id)} disabled={savingHist} variant="destructive" size="sm" className="rounded-full font-body text-xs shrink-0">
-                              <Trash2 className="h-3 w-3"/> Elimina
-                            </Button>
+                            <div className="flex gap-2 shrink-0">
+                              <Button onClick={()=>openEdit(item)} disabled={savingHist} variant="outline" size="sm" className="rounded-full font-body text-xs">
+                                <Pencil className="h-3 w-3"/> Modifica
+                              </Button>
+                              <Button onClick={()=>deleteHistoryItem(item.id)} disabled={savingHist} variant="destructive" size="sm" className="rounded-full font-body text-xs">
+                                <Trash2 className="h-3 w-3"/> Elimina
+                              </Button>
+                            </div>
                           </div>
-                          {item.description&&<p className="mb-3 font-body text-xs text-muted-foreground italic line-clamp-2">"{item.description}"</p>}
                           <div className="flex items-center gap-3">
                             <span className="font-body text-xs text-muted-foreground">Rating:</span>
                             <StarPicker value={item.rating} onChange={v=>saveHistoryRating(item.id,v)}/>
@@ -873,6 +989,58 @@ const Admin = () => {
           </>
         )}
       </div>
+
+      {/* ── Modal modifica storico ── */}
+      {editingItem&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 px-4 backdrop-blur-sm overflow-y-auto py-8"
+          onClick={e=>{ if(e.target===e.currentTarget) setEditingItem(null); }}>
+          <div className="w-full max-w-md rounded-[2rem] border border-border bg-card p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between">
+              <div>
+                <p className="mb-1 font-body text-xs font-bold uppercase tracking-[0.24em] text-accent">Modifica</p>
+                <h3 className="font-display text-2xl font-bold">Aggiorna la collab</h3>
+              </div>
+              <button onClick={()=>setEditingItem(null)} className="rounded-full p-2 text-muted-foreground hover:bg-muted"><X className="h-4 w-4"/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block font-body text-xs font-semibold text-muted-foreground">Emoji</label>
+                <div className="flex flex-wrap gap-2">
+                  {HISTORY_EMOJIS.map(e=>(
+                    <button key={e} type="button" onClick={()=>setEditEmoji(e)}
+                      className={`text-xl rounded-lg p-1.5 transition ${editEmoji===e?"bg-accent/20 ring-2 ring-accent":"hover:bg-muted"}`}>{e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block font-body text-xs font-semibold text-muted-foreground">Titolo</label>
+                <Input value={editTitle} onChange={e=>setEditTitle(e.target.value)}/>
+              </div>
+              <div>
+                <label className="mb-1.5 block font-body text-xs font-semibold text-muted-foreground">Descrizione</label>
+                <Textarea value={editDesc} onChange={e=>setEditDesc(e.target.value)} className="min-h-[80px] resize-none"/>
+              </div>
+              <div>
+                <label className="mb-1.5 block font-body text-xs font-semibold text-muted-foreground">
+                  <Crown className="mr-1 inline h-3.5 w-3.5 text-accent"/>Partecipanti — primo = capo collab
+                </label>
+                <Input value={editNames} onChange={e=>setEditNames(e.target.value)} placeholder="Es: Chicco, Loris, Marco"/>
+              </div>
+              <div>
+                <label className="mb-2 block font-body text-xs font-semibold text-muted-foreground">Rating</label>
+                <StarPicker value={editRating} onChange={setEditRating}/>
+              </div>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <Button onClick={()=>setEditingItem(null)} variant="outline" className="rounded-full font-body">Annulla</Button>
+              <Button onClick={saveEdit} disabled={savingHist} className="flex-1 rounded-full font-body font-semibold">
+                <Save className="h-4 w-4"/> Salva modifiche
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
