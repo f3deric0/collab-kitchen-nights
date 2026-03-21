@@ -4,6 +4,7 @@ import CollabBoard from "@/components/CollabBoard";
 import BookingSection from "@/components/BookingSection";
 import RecipesSection from "@/components/RecipesSection";
 import PantrySection from "@/components/PantrySection";
+import HistoricalCollab from "@/components/HistoricalCollab";
 import DishwasherShowcase from "@/components/DishwasherShowcase";
 import FooterSection from "@/components/FooterSection";
 
@@ -16,6 +17,7 @@ const Index = () => {
       <BookingSection />
       <RecipesSection />
       <PantrySection />
+      <HistoricalCollab />
       <DishwasherShowcase />
       <FooterSection />
     </main>
