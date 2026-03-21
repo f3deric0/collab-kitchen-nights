@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   CalendarX, Check, Clock, LogOut, Plus, Save,
-  ShieldAlert, ShieldCheck, Sparkles, Trash2, X,
+  ShieldAlert, ShieldCheck, Sparkles, Trash2, X, Trophy, Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import {
   DEFAULT_PANTRY, DEFAULT_RECIPES, checkIsAdmin,
   pantryCategoryLabels, type PublicPantryIngredient, type PublicRecipe,
 } from "@/lib/publicContent";
+import { format } from "date-fns";
+import { it } from "date-fns/locale";
 
 const recipeDifficultyOptions = ["Facile", "Media", "Difficile"] as const;
 const pantryCategoryOptions   = ["base", "spice", "fresh", "condiment", "other"] as const;
@@ -28,6 +30,11 @@ type Booking     = {
   status: "pending" | "confirmed" | "rejected";
   created_at: string;
 };
+type CollabHistory = {
+  id: string; title: string; description: string | null;
+  collab_date: string; participants: number;
+  rating: number | null; emoji: string | null;
+};
 
 const emptyRecipe: RecipeDraft = { title: "", description: "", difficulty: "Facile", time_label: "30 min" };
 const emptyPantry: PantryDraft = { name: "", category: "base", notes: "" };
@@ -40,7 +47,6 @@ const fmtDate = (s: string) => {
   return `${DAYS[dt.getDay()]} ${d} ${MONTHS[+m]} ${y}`;
 };
 
-// ── Genera il mini-calendario del mese corrente + prossimo ─────────────────────
 const buildCalendarMonths = () => {
   const today = new Date();
   const months = [];
@@ -48,12 +54,24 @@ const buildCalendarMonths = () => {
     const year  = today.getMonth() + offset > 11 ? today.getFullYear() + 1 : today.getFullYear();
     const month = (today.getMonth() + offset) % 12;
     const days  = new Date(year, month + 1, 0).getDate();
-    const firstDow = new Date(year, month, 1).getDay(); // 0=Dom
+    const firstDow = new Date(year, month, 1).getDay();
     const startPad  = firstDow === 0 ? 6 : firstDow - 1;
     months.push({ year, month, days, startPad });
   }
   return months;
 };
+
+const HISTORY_EMOJIS = ["🍝", "🍕", "🌮", "🍣", "🥘", "🥗", "🍳", "🍜", "🫕", "🥩"];
+
+const StarPicker = ({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) => (
+  <div className="flex items-center gap-1">
+    {[1, 2, 3, 4, 5].map(s => (
+      <button key={s} type="button" onClick={() => onChange(s === value ? null : s)} className="transition hover:scale-110">
+        <Star className={`h-5 w-5 ${s <= (value ?? 0) ? "fill-accent text-accent" : "text-muted-foreground/30 hover:text-accent/60"}`} />
+      </button>
+    ))}
+  </div>
+);
 
 const Admin = () => {
   const [session,        setSession]        = useState<Session | null>(null);
@@ -64,40 +82,52 @@ const Admin = () => {
   const [email,          setEmail]          = useState("");
   const [password,       setPassword]       = useState("");
   const [displayName,    setDisplayName]    = useState("");
-  const [activeTab,      setActiveTab]      = useState<"recipes" | "pantry" | "calendar">("recipes");
+  const [activeTab,      setActiveTab]      = useState<"recipes" | "pantry" | "calendar" | "history">("recipes");
 
-  const [recipes,     setRecipes]     = useState<PublicRecipe[]>([]);
-  const [pantryItems, setPantryItems] = useState<PublicPantryIngredient[]>([]);
-  const [busyDays,    setBusyDays]    = useState<BusyDay[]>([]);
-  const [bookings,    setBookings]    = useState<Booking[]>([]);
+  const [recipes,       setRecipes]       = useState<PublicRecipe[]>([]);
+  const [pantryItems,   setPantryItems]   = useState<PublicPantryIngredient[]>([]);
+  const [busyDays,      setBusyDays]      = useState<BusyDay[]>([]);
+  const [bookings,      setBookings]      = useState<Booking[]>([]);
+  const [historyItems,  setHistoryItems]  = useState<CollabHistory[]>([]);
 
   const [newRecipe,     setNewRecipe]     = useState<RecipeDraft>(emptyRecipe);
   const [newPantryItem, setNewPantryItem] = useState<PantryDraft>(emptyPantry);
   const [newBusyDate,   setNewBusyDate]   = useState("");
   const [newBusyReason, setNewBusyReason] = useState("");
 
+  // History form
+  const [newHistTitle,   setNewHistTitle]   = useState("");
+  const [newHistDesc,    setNewHistDesc]    = useState("");
+  const [newHistDate,    setNewHistDate]    = useState("");
+  const [newHistPeople,  setNewHistPeople]  = useState("2");
+  const [newHistRating,  setNewHistRating]  = useState<number | null>(null);
+  const [newHistEmoji,   setNewHistEmoji]   = useState("🍳");
+  const [cleanupCount,   setCleanupCount]   = useState<number | null>(null);
+
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [savingPantry, setSavingPantry] = useState(false);
   const [savingBusy,   setSavingBusy]   = useState(false);
   const [savingBook,   setSavingBook]   = useState(false);
+  const [savingHist,   setSavingHist]   = useState(false);
 
-  // ── carica tutto ──────────────────────────────────────────────────────────
   const loadAdminData = async (userId: string) => {
     setLoadingData(true);
     try {
       const c = supabase as any;
-      const [adminOk, recipesR, pantryR, busyR, bookR] = await Promise.all([
+      const [adminOk, recipesR, pantryR, busyR, bookR, histR] = await Promise.all([
         checkIsAdmin(userId),
         c.from("recipes").select("id,title,description,difficulty,time_label,display_order,is_active").order("display_order"),
         c.from("pantry_ingredients").select("id,name,category,notes,display_order").order("display_order"),
         c.from("busy_days").select("id,date,reason").order("date"),
         c.from("booking_requests").select("id,name,email,participants,requested_date,requested_time,notes,status,created_at").order("requested_date"),
+        c.from("collab_history").select("*").order("collab_date", { ascending: false }),
       ]);
       setIsAdmin(adminOk);
       setRecipes(((recipesR.data as PublicRecipe[] | null) ?? DEFAULT_RECIPES).sort((a, b) => a.display_order - b.display_order));
       setPantryItems(((pantryR.data as PublicPantryIngredient[] | null) ?? DEFAULT_PANTRY).sort((a, b) => a.display_order - b.display_order));
       setBusyDays((busyR.data as BusyDay[] | null) ?? []);
       setBookings((bookR.data as Booking[] | null) ?? []);
+      setHistoryItems((histR.data as CollabHistory[] | null) ?? []);
     } catch (e) {
       console.error(e);
       toast.error("Errore nel caricamento admin.");
@@ -240,6 +270,65 @@ const Admin = () => {
     finally { setSavingBook(false); }
   };
 
+  // ── storico ───────────────────────────────────────────────────────────────
+  const addHistoryItem = async () => {
+    if (!newHistTitle || !newHistDate) { toast.error("Titolo e data obbligatori."); return; }
+    setSavingHist(true);
+    try {
+      const { data, error } = await (supabase as any).from("collab_history").insert({
+        title: newHistTitle, description: newHistDesc || null,
+        collab_date: newHistDate, participants: parseInt(newHistPeople) || 2,
+        rating: newHistRating, emoji: newHistEmoji,
+      }).select("*").single();
+      if (error) throw error;
+      setHistoryItems(h => [data, ...h]);
+      setNewHistTitle(""); setNewHistDesc(""); setNewHistDate(""); setNewHistPeople("2"); setNewHistRating(null); setNewHistEmoji("🍳");
+      toast.success("Aggiunto allo storico! 🍳");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setSavingHist(false); }
+  };
+
+  const saveHistoryRating = async (id: string, rating: number | null) => {
+    setSavingHist(true);
+    try {
+      const { error } = await (supabase as any).from("collab_history").update({ rating }).eq("id", id);
+      if (error) throw error;
+      setHistoryItems(h => h.map(x => x.id === id ? { ...x, rating } : x));
+      toast.success("Rating salvato ⭐");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setSavingHist(false); }
+  };
+
+  const deleteHistoryItem = async (id: string) => {
+    setSavingHist(true);
+    try {
+      const { error } = await (supabase as any).from("collab_history").delete().eq("id", id);
+      if (error) throw error;
+      setHistoryItems(h => h.filter(x => x.id !== id));
+      toast.success("Eliminato.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setSavingHist(false); }
+  };
+
+  const cleanupExpiredProposals = async () => {
+    setSavingHist(true);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const { data: expired } = await (supabase as any)
+        .from("booking_requests").select("id").eq("status", "pending").lt("requested_date", today);
+      if (!expired || expired.length === 0) {
+        toast.info("Nessuna proposta scaduta da eliminare.");
+        setCleanupCount(0);
+        return;
+      }
+      const { error } = await (supabase as any).from("booking_requests").delete().in("id", expired.map((x: any) => x.id));
+      if (error) throw error;
+      setCleanupCount(expired.length);
+      toast.success(`${expired.length} proposta/e scaduta/e eliminate! 🗑️`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setSavingHist(false); }
+  };
+
   // ── helpers calendario ────────────────────────────────────────────────────
   const calMonths    = buildCalendarMonths();
   const busySet      = new Set(busyDays.map(d => d.date));
@@ -318,20 +407,21 @@ const Admin = () => {
         ) : (
           <>
             {/* Tabs */}
-            <div className="mb-6 flex gap-2 rounded-2xl border border-border bg-card p-2">
+            <div className="mb-6 flex gap-2 rounded-2xl border border-border bg-card p-2 overflow-x-auto">
               {([
                 {id:"recipes",  label:"🍽 Ricette"},
                 {id:"pantry",   label:"🥘 Dispensa"},
                 {id:"calendar", label:"📅 Calendario"},
+                {id:"history",  label:"🏆 Storico"},
               ] as const).map(tab => (
                 <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
-                  className={`flex-1 rounded-xl px-4 py-2.5 font-body text-sm font-semibold transition ${activeTab===tab.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground"}`}>
+                  className={`shrink-0 flex-1 rounded-xl px-4 py-2.5 font-body text-sm font-semibold transition ${activeTab===tab.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground"}`}>
                   {tab.label}
                 </button>
               ))}
             </div>
 
-            {/* ── RICETTE ──────────────────────────────────────────────────── */}
+            {/* ── RICETTE ── */}
             {activeTab==="recipes" && (
               <section className="rounded-[2rem] border border-border bg-card p-6">
                 <div className="mb-6 flex items-start justify-between gap-4">
@@ -341,7 +431,6 @@ const Admin = () => {
                   </div>
                   <Sparkles className="h-5 w-5 text-accent mt-1"/>
                 </div>
-                {/* nuova ricetta */}
                 <div className="mb-6 rounded-[1.5rem] border border-border bg-muted/40 p-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Input value={newRecipe.title} onChange={e=>setNewRecipe(c=>({...c,title:e.target.value}))} placeholder="Nuova ricetta"/>
@@ -385,7 +474,7 @@ const Admin = () => {
               </section>
             )}
 
-            {/* ── DISPENSA ─────────────────────────────────────────────────── */}
+            {/* ── DISPENSA ── */}
             {activeTab==="pantry" && (
               <section className="rounded-[2rem] border border-border bg-card p-6">
                 <div className="mb-6 flex items-start justify-between gap-4">
@@ -426,22 +515,18 @@ const Admin = () => {
               </section>
             )}
 
-            {/* ── CALENDARIO ───────────────────────────────────────────────── */}
+            {/* ── CALENDARIO ── */}
             {activeTab==="calendar" && (
               <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-
-                {/* Colonna sx: mini-calendari + lista prenotazioni */}
                 <div className="space-y-6">
-
-                  {/* Mini calendari */}
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <div className="mb-4 flex items-start gap-3">
                       <CalendarX className="mt-1 h-5 w-5 text-accent"/>
                       <div>
                         <h2 className="font-display text-2xl font-bold">Panoramica mese</h2>
                         <p className="mt-1 font-body text-sm text-muted-foreground">
-                          <span className="inline-block h-3 w-3 rounded-sm bg-red-500/30 border border-red-500/50 mr-1"/>bloccato da te &nbsp;
-                          <span className="inline-block h-3 w-3 rounded-sm bg-yellow-500/25 border border-yellow-400/50 mr-1"/>prenotazione in attesa &nbsp;
+                          <span className="inline-block h-3 w-3 rounded-sm bg-red-500/30 border border-red-500/50 mr-1"/>bloccato &nbsp;
+                          <span className="inline-block h-3 w-3 rounded-sm bg-yellow-500/25 border border-yellow-400/50 mr-1"/>in attesa &nbsp;
                           <span className="inline-block h-3 w-3 rounded-sm bg-green-500/20 border border-green-500/40 mr-1"/>confermata
                         </p>
                       </div>
@@ -462,11 +547,11 @@ const Admin = () => {
                               {Array.from({length: days}).map((_,i)=>{
                                 const d   = i + 1;
                                 const key = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                                const isBusy     = busySet.has(key);
-                                const dayBooks   = bookingMap.get(key) ?? [];
+                                const isBusy      = busySet.has(key);
+                                const dayBooks    = bookingMap.get(key) ?? [];
                                 const hasPending  = dayBooks.some(b=>b.status==="pending");
                                 const hasConfirmed= dayBooks.some(b=>b.status==="confirmed");
-                                const isPast     = key < todayStr;
+                                const isPast      = key < todayStr;
                                 return (
                                   <div key={d} title={isBusy?"Bloccato":dayBooks.length>0?`${dayBooks.length} prenotazione/i`:""}
                                     className={`aspect-square flex items-center justify-center rounded-lg font-body text-xs font-semibold transition
@@ -487,7 +572,6 @@ const Admin = () => {
                     </div>
                   </section>
 
-                  {/* Prenotazioni ricevute */}
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <div className="mb-5">
                       <h2 className="font-display text-2xl font-bold">Prenotazioni ricevute</h2>
@@ -545,11 +629,10 @@ const Admin = () => {
                   </section>
                 </div>
 
-                {/* Colonna dx: blocca giorni */}
                 <div className="space-y-4">
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <h2 className="font-display text-xl font-bold mb-1">Blocca un giorno</h2>
-                    <p className="font-body text-xs text-muted-foreground mb-4">Il giorno non sarà prenotabile sul sito.</p>
+                    <p className="font-body text-xs text-muted-foreground mb-4">Il giorno non sarà prenotabile.</p>
                     <div className="space-y-3">
                       <div>
                         <label className="mb-1 block font-body text-xs text-muted-foreground">Data</label>
@@ -557,15 +640,13 @@ const Admin = () => {
                       </div>
                       <div>
                         <label className="mb-1 block font-body text-xs text-muted-foreground">Motivo (opzionale)</label>
-                        <Input value={newBusyReason} onChange={e=>setNewBusyReason(e.target.value)} placeholder="Es. Sono via, impegno…"/>
+                        <Input value={newBusyReason} onChange={e=>setNewBusyReason(e.target.value)} placeholder="Es. Sono via…"/>
                       </div>
                       <Button onClick={addBusyDay} disabled={savingBusy||!newBusyDate} className="w-full rounded-full font-body font-semibold">
                         <Plus className="h-4 w-4"/> Blocca giorno
                       </Button>
                     </div>
                   </section>
-
-                  {/* Lista giorni bloccati */}
                   <section className="rounded-[2rem] border border-border bg-card p-6">
                     <h2 className="font-display text-xl font-bold mb-4">Giorni bloccati ({busyDays.length})</h2>
                     {busyDays.length===0 ? (
@@ -588,7 +669,108 @@ const Admin = () => {
                     )}
                   </section>
                 </div>
+              </div>
+            )}
 
+            {/* ── STORICO ── */}
+            {activeTab==="history" && (
+              <div className="space-y-6">
+
+                {/* Cleanup */}
+                <section className="rounded-[2rem] border border-border bg-card p-6">
+                  <div className="mb-4 flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="font-display text-2xl font-bold">Pulizia proposte scadute</h2>
+                      <p className="mt-1 font-body text-sm text-muted-foreground">Elimina le prenotazioni "pending" con data già passata.</p>
+                    </div>
+                    <CalendarX className="mt-1 h-5 w-5 text-accent shrink-0"/>
+                  </div>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Button onClick={cleanupExpiredProposals} disabled={savingHist} variant="destructive" className="rounded-full font-body font-semibold">
+                      <Trash2 className="h-4 w-4"/> Elimina proposte scadute
+                    </Button>
+                    {cleanupCount !== null && (
+                      <p className="font-body text-sm text-muted-foreground">
+                        {cleanupCount === 0 ? "Nessuna trovata." : `${cleanupCount} eliminate ✓`}
+                      </p>
+                    )}
+                  </div>
+                </section>
+
+                {/* Aggiungi al storico */}
+                <section className="rounded-[2rem] border border-border bg-card p-6">
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                      <p className="mb-2 font-body text-xs font-semibold uppercase tracking-[0.22em] text-secondary">Aggiungi</p>
+                      <h2 className="font-display text-2xl font-bold">Nuova collab nello storico</h2>
+                    </div>
+                    <Trophy className="h-5 w-5 text-accent mt-1"/>
+                  </div>
+                  <div className="rounded-[1.5rem] border border-border bg-muted/40 p-4 space-y-3">
+                    <div>
+                      <label className="mb-2 block font-body text-xs font-semibold text-muted-foreground">Emoji</label>
+                      <div className="flex flex-wrap gap-2">
+                        {HISTORY_EMOJIS.map(e => (
+                          <button key={e} type="button" onClick={() => setNewHistEmoji(e)}
+                            className={`text-xl rounded-lg p-1.5 transition ${newHistEmoji === e ? "bg-accent/20 ring-2 ring-accent" : "hover:bg-muted"}`}>
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Input value={newHistTitle} onChange={e=>setNewHistTitle(e.target.value)} placeholder="Nome collab (es: Carbonara Battle)"/>
+                      <Input type="date" value={newHistDate} onChange={e=>setNewHistDate(e.target.value)}/>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                      <Textarea value={newHistDesc} onChange={e=>setNewHistDesc(e.target.value)} placeholder="Descrizione breve…" className="min-h-[70px] resize-none"/>
+                      <Input type="number" min={1} max={20} value={newHistPeople} onChange={e=>setNewHistPeople(e.target.value)} placeholder="Partecipanti"/>
+                    </div>
+                    <div>
+                      <label className="mb-2 block font-body text-xs font-semibold text-muted-foreground">Rating</label>
+                      <StarPicker value={newHistRating} onChange={setNewHistRating}/>
+                    </div>
+                    <Button onClick={addHistoryItem} disabled={savingHist} className="rounded-full font-body font-semibold">
+                      <Plus className="h-4 w-4"/> Aggiungi allo storico
+                    </Button>
+                  </div>
+                </section>
+
+                {/* Lista storico */}
+                <section className="rounded-[2rem] border border-border bg-card p-6">
+                  <h2 className="font-display text-2xl font-bold mb-5">Storico collab ({historyItems.length})</h2>
+                  {loadingData ? (
+                    <p className="text-sm text-muted-foreground">Caricamento…</p>
+                  ) : historyItems.length === 0 ? (
+                    <p className="font-body text-sm text-muted-foreground">Nessuna collab nello storico ancora.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {historyItems.map(item => (
+                        <div key={item.id} className="rounded-2xl border border-border bg-background p-4">
+                          <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{item.emoji ?? "🍳"}</span>
+                              <div>
+                                <p className="font-body text-sm font-bold text-foreground">{item.title}</p>
+                                <p className="font-body text-xs text-muted-foreground">
+                                  {format(new Date(item.collab_date + "T00:00:00"), "d MMMM yyyy", { locale: it })} · {item.participants} persone
+                                </p>
+                              </div>
+                            </div>
+                            <Button onClick={()=>deleteHistoryItem(item.id)} disabled={savingHist} variant="destructive" size="sm" className="rounded-full font-body text-xs">
+                              <Trash2 className="h-3 w-3"/> Elimina
+                            </Button>
+                          </div>
+                          {item.description && <p className="mb-3 font-body text-xs text-muted-foreground italic">"{item.description}"</p>}
+                          <div className="flex items-center gap-3">
+                            <span className="font-body text-xs text-muted-foreground">Rating:</span>
+                            <StarPicker value={item.rating} onChange={v => saveHistoryRating(item.id, v)}/>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
             )}
           </>
